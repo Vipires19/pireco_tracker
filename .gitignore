@@ -1,0 +1,138 @@
+# =============================================================================
+# Vehicle Tracker — Monorepo .gitignore
+# =============================================================================
+
+# --- Environment & secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+credentials.json
+secrets/
+.secrets/
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.venv/
+venv/
+ENV/
+env/
+.pytest_cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.pyre/
+htmlcov/
+.coverage
+.coverage.*
+coverage/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.tox/
+.nox/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# --- Alembic (local overrides only) ---
+# Keep versions/ tracked; ignore ad-hoc local migration scratch files if any
+alembic.ini.local
+
+# --- Node.js / Next.js ---
+node_modules/
+.npm
+.yarn/
+.pnp.*
+.next/
+out/
+.nuxt/
+.cache/
+.parcel-cache/
+.turbo/
+*.tsbuildinfo
+next-env.d.ts
+
+# --- Build artifacts ---
+dist/
+build/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# --- Databases (local) ---
+*.sqlite
+*.sqlite3
+*.db
+
+# --- Docker volumes (local bind mounts) ---
+postgres_data/
+redis_data/
+
+# --- Testing ---
+playwright-report/
+test-results/
+playwright/.cache/
+
+# --- IDE: VSCode ---
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json.example
+
+# --- IDE: JetBrains ---
+.idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# --- OS: macOS ---
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# --- OS: Windows ---
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# --- OS: Linux ---
+*~
+.fuse_hidden*
+.directory
+.Trash-*

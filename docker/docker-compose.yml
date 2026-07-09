@@ -1,0 +1,161 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: vt-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tracker}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-tracker_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-vehicle_tracker}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tracker} -d ${POSTGRES_DB:-vehicle_tracker}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - vt-network
+
+  redis:
+    image: redis:7-alpine
+    container_name: vt-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vt-network
+
+  backend:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    container_name: vt-backend
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-tracker}:${POSTGRES_PASSWORD:-tracker_secret}@postgres:5432/${POSTGRES_DB:-vehicle_tracker}
+      REDIS_URL: redis://redis:6379/0
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production-use-long-random-string}
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/live')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    networks:
+      - vt-network
+
+  gateway:
+    build:
+      context: ..
+      dockerfile: gateway/Dockerfile
+    container_name: vt-gateway
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      REDIS_STREAM_KEY: tracker:events
+      REDIS_DEAD_LETTER_STREAM_KEY: tracker:dead-letter
+    ports:
+      - "${GATEWAY_TCP_PORT:-5023}:5023"
+      - "${GATEWAY_HEALTH_PORT:-5024}:5024"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5024/live')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - vt-network
+
+  worker:
+    build:
+      context: ..
+      dockerfile: worker/Dockerfile
+    container_name: vt-worker
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-tracker}:${POSTGRES_PASSWORD:-tracker_secret}@postgres:5432/${POSTGRES_DB:-vehicle_tracker}
+      REDIS_URL: redis://redis:6379/0
+      REDIS_STREAM_KEY: tracker:events
+      REDIS_DEAD_LETTER_STREAM_KEY: tracker:dead-letter
+      REDIS_CONSUMER_GROUP: tracker-workers
+      REDIS_CONSUMER_NAME: worker-1
+      WORKER_MAX_RETRIES: ${WORKER_MAX_RETRIES:-3}
+      HEALTH_PORT: 9100
+    ports:
+      - "${WORKER_HEALTH_PORT:-9100}:9100"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9100/live')"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - vt-network
+
+  frontend:
+    build:
+      context: ../frontend
+      dockerfile: Dockerfile
+      args:
+        INTERNAL_API_URL: http://backend:8000
+    container_name: vt-frontend
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+      INTERNAL_API_URL: http://backend:8000
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - vt-network
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  vt-network:
+    driver: bridge
