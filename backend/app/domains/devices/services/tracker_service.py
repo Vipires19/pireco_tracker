@@ -1,6 +1,7 @@
 import math
 from datetime import UTC, datetime
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domains.devices.models import (
@@ -119,16 +120,20 @@ class TrackerService:
         initial_status = payload.status.value if payload.status is not None else TrackerStatus.NEW.value
         tracker = Tracker(status=initial_status)
         self._apply_payload(tracker, payload)
-        created = await self._trackers.create(tracker)
-        await self._audit.create(
-            tracker_id=created.id,
-            user_id=user.id,
-            action=TrackerAuditAction.CREATED.value,
-            details=f"Rastreador criado: {created.imei}",
-            ip_address=ip_address,
-            user_agent=user_agent,
-        )
-        await self._session.commit()
+        try:
+            created = await self._trackers.create(tracker)
+            await self._audit.create(
+                tracker_id=created.id,
+                user_id=user.id,
+                action=TrackerAuditAction.CREATED.value,
+                details=f"Rastreador criado: {created.imei}",
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+            await self._session.commit()
+        except IntegrityError as exc:
+            await self._session.rollback()
+            raise ValueError("imei_already_exists") from exc
         logger.info("Tracker created id=%s by user_id=%s", created.id, user.id)
         return created
 
@@ -144,16 +149,20 @@ class TrackerService:
         tracker = await self.get_tracker(tracker_id)
         await self._ensure_unique_imei(payload.imei, exclude_id=tracker_id)
         self._apply_payload(tracker, payload)
-        updated = await self._trackers.update(tracker)
-        await self._audit.create(
-            tracker_id=updated.id,
-            user_id=user.id,
-            action=TrackerAuditAction.UPDATED.value,
-            details=f"Rastreador atualizado: {updated.imei}",
-            ip_address=ip_address,
-            user_agent=user_agent,
-        )
-        await self._session.commit()
+        try:
+            updated = await self._trackers.update(tracker)
+            await self._audit.create(
+                tracker_id=updated.id,
+                user_id=user.id,
+                action=TrackerAuditAction.UPDATED.value,
+                details=f"Rastreador atualizado: {updated.imei}",
+                ip_address=ip_address,
+                user_agent=user_agent,
+            )
+            await self._session.commit()
+        except IntegrityError as exc:
+            await self._session.rollback()
+            raise ValueError("imei_already_exists") from exc
         logger.info("Tracker updated id=%s by user_id=%s", updated.id, user.id)
         return updated
 

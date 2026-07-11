@@ -48,7 +48,7 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-tracker}:${POSTGRES_PASSWORD:-tracker_secret}@postgres:5432/${POSTGRES_DB:-vehicle_tracker}
       REDIS_URL: redis://redis:6379/0
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-change-me-in-production-use-long-random-string}
+      
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     depends_on:

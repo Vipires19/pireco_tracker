@@ -3,7 +3,13 @@ import uuid
 from asyncio import StreamReader, StreamWriter
 
 from app.contracts.messages import DeviceConnection, DeviceHeartbeat
-from app.exceptions import ConnectionTimeoutError, PublishEventError, TrackerError
+from app.exceptions import (
+    CRCValidationError,
+    ConnectionTimeoutError,
+    InvalidPacketError,
+    PublishEventError,
+    TrackerError,
+)
 from app.core.observability import bind_context, get_logger, log_with_fields, new_trace_id
 
 from app.config import get_settings
@@ -18,10 +24,27 @@ from app.observability.metrics import (
     TCP_CONNECTIONS_CLOSED,
 )
 from app.protocol import build_ack, extract_packets, parse_packet
+from app.protocol.parser import _parse_packet_or_raise
 from app.publisher.redis_publisher import event_publisher
 from app.sessions.manager import session_manager
 
 logger = get_logger(__name__)
+
+
+def _discard_reason(frame: bytes) -> str:
+    """Classifica o motivo do descarte sem alterar o parser público."""
+    try:
+        _parse_packet_or_raise(frame)
+    except CRCValidationError:
+        return "CRC inválido"
+    except InvalidPacketError as exc:
+        msg = str(exc)
+        if msg == "Invalid start bytes":
+            return "Cabeçalho desconhecido"
+        return "Tamanho inválido"
+    except Exception as exc:
+        return f"exceção inesperada: {exc}"
+    return "desconhecido"
 
 
 class GT06TcpServer:
@@ -67,10 +90,19 @@ class GT06TcpServer:
         peer = writer.get_extra_info("peername")
         peer_str = f"{peer[0]}:{peer[1]}" if peer else "unknown"
         buffer = bytearray()
+        received_any_data = False
+        last_rx_hex: str | None = None
 
         bind_context(connection_id=connection_id, remote_ip=peer_str)
         await session_manager.register(connection_id, peer_str, writer)
         TCP_CONNECTIONS_ACTIVE.set(session_manager.active_count)
+        log_with_fields(
+            logger,
+            20,
+            "Connection accepted",
+            remote_ip=peer_str,
+            connection_id=connection_id,
+        )
 
         try:
             while True:
@@ -85,7 +117,27 @@ class GT06TcpServer:
                     ) from exc
 
                 if not data:
+                    if not received_any_data:
+                        log_with_fields(
+                            logger,
+                            30,
+                            "Client closed connection before sending data.",
+                            remote_ip=peer_str,
+                            connection_id=connection_id,
+                        )
                     break
+
+                received_any_data = True
+                last_rx_hex = data.hex()
+                log_with_fields(
+                    logger,
+                    20,
+                    f"Bytes recebidos: {len(data)}",
+                    bytes_received=len(data),
+                    hex=last_rx_hex,
+                    remote_ip=peer_str,
+                    connection_id=connection_id,
+                )
 
                 BYTES_RECEIVED.inc(len(data))
                 buffer.extend(data)
@@ -93,11 +145,33 @@ class GT06TcpServer:
 
                 for frame in frames:
                     PACKETS_RECEIVED.inc()
-                    packet = parse_packet(frame)
+                    frame_hex = frame.hex()
+
+                    try:
+                        packet = parse_packet(frame)
+                    except Exception:
+                        PACKETS_INVALID.inc()
+                        logger.exception("Parser exception")
+                        log_with_fields(
+                            logger,
+                            40,
+                            "Parser exception",
+                            hex=frame_hex,
+                            remote_ip=peer_str,
+                            connection_id=connection_id,
+                        )
+                        continue
+
                     if packet is None:
                         PACKETS_INVALID.inc()
+                        reason = _discard_reason(frame)
                         log_with_fields(
-                            logger, 30, "Invalid packet discarded", frame_size=len(frame)
+                            logger,
+                            30,
+                            reason,
+                            hex=frame_hex,
+                            remote_ip=peer_str,
+                            connection_id=connection_id,
                         )
                         continue
 
@@ -138,9 +212,25 @@ class GT06TcpServer:
                     ACKS_SENT.inc()
 
         except TrackerError as exc:
-            log_with_fields(logger, 30, "Tracker error on connection", error=str(exc))
+            log_with_fields(
+                logger,
+                30,
+                "Tracker error on connection",
+                error=str(exc),
+                hex=last_rx_hex,
+                remote_ip=peer_str,
+                connection_id=connection_id,
+            )
         except Exception:
             logger.exception("Unexpected connection error")
+            log_with_fields(
+                logger,
+                40,
+                "Unexpected connection error details",
+                hex=last_rx_hex,
+                remote_ip=peer_str,
+                connection_id=connection_id,
+            )
         finally:
             removed = await session_manager.remove(connection_id)
             TCP_CONNECTIONS_CLOSED.inc()

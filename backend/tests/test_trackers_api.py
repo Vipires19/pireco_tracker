@@ -173,6 +173,47 @@ async def test_trackers_duplicate_imei(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_trackers_soft_delete_allows_recreate_same_imei(client: AsyncClient) -> None:
+    token = await _login(client, "admin@example.com", "admin123")
+    headers = {"Authorization": f"Bearer {token}"}
+    imei = _unique_imei()
+
+    created = await client.post(
+        f"{BASE}/trackers",
+        headers=headers,
+        json=_tracker_payload(imei),
+    )
+    assert created.status_code == 201, created.text
+    tracker_id = created.json()["id"]
+
+    deleted = await client.delete(f"{BASE}/trackers/{tracker_id}", headers=headers)
+    assert deleted.status_code == 204
+
+    missing = await client.get(f"{BASE}/trackers/{tracker_id}", headers=headers)
+    assert missing.status_code == 404
+
+    recreated_response = await client.post(
+        f"{BASE}/trackers",
+        headers=headers,
+        json=_tracker_payload(imei),
+    )
+    assert recreated_response.status_code == 201, recreated_response.text
+    recreated = recreated_response.json()
+    assert recreated["imei"] == imei
+    assert recreated["id"] != tracker_id
+
+    duplicate = await client.post(
+        f"{BASE}/trackers",
+        headers=headers,
+        json=_tracker_payload(imei, model="Duplicado ativo"),
+    )
+    assert duplicate.status_code == 409
+    assert duplicate.json()["detail"] == "imei_already_exists"
+
+    await client.delete(f"{BASE}/trackers/{recreated['id']}", headers=headers)
+
+
+@pytest.mark.asyncio
 async def test_trackers_invalid_imei(client: AsyncClient) -> None:
     token = await _login(client, "admin@example.com", "admin123")
     headers = {"Authorization": f"Bearer {token}"}
