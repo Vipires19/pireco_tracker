@@ -1,57 +1,44 @@
+"""Servidor TCP genérico — detecta protocolo via Registry e delega o handling."""
+
+from __future__ import annotations
+
 import asyncio
 import uuid
 from asyncio import StreamReader, StreamWriter
 
-from app.contracts.messages import DeviceConnection, DeviceHeartbeat
-from app.exceptions import (
-    CRCValidationError,
-    ConnectionTimeoutError,
-    InvalidPacketError,
-    PublishEventError,
-    TrackerError,
-)
-from app.core.observability import bind_context, get_logger, log_with_fields, new_trace_id
-
 from app.config import get_settings
-from app.domain.mapper import gt06_domain_mapper
+from app.contracts.messages import DeviceConnection
+from app.core.observability import bind_context, get_logger, log_with_fields, new_trace_id
+from app.exceptions import ConnectionTimeoutError, PublishEventError
 from app.observability.metrics import (
-    ACKS_SENT,
     BYTES_RECEIVED,
-    BYTES_SENT,
-    PACKETS_INVALID,
-    PACKETS_RECEIVED,
     TCP_CONNECTIONS_ACTIVE,
     TCP_CONNECTIONS_CLOSED,
 )
-from app.protocol import build_ack, extract_packets, parse_packet
-from app.protocol.parser import _parse_packet_or_raise
+from app.observability.session_lifecycle import (
+    CLOSE_CLIENT,
+    CLOSE_SERVER,
+    CLOSE_TIMEOUT,
+    SessionLifecycle,
+)
+from app.protocols import ProtocolDetector, create_default_registry
+from app.protocols.detector import MIN_DETECT_BYTES
+from app.protocols.registry import UNKNOWN_PROTOCOL_NAME
 from app.publisher.redis_publisher import event_publisher
 from app.sessions.manager import session_manager
 
 logger = get_logger(__name__)
 
 
-def _discard_reason(frame: bytes) -> str:
-    """Classifica o motivo do descarte sem alterar o parser público."""
-    try:
-        _parse_packet_or_raise(frame)
-    except CRCValidationError:
-        return "CRC inválido"
-    except InvalidPacketError as exc:
-        msg = str(exc)
-        if msg == "Invalid start bytes":
-            return "Cabeçalho desconhecido"
-        return "Tamanho inválido"
-    except Exception as exc:
-        return f"exceção inesperada: {exc}"
-    return "desconhecido"
+class GatewayTcpServer:
+    """TCP gateway multi-protocolo. Não conhece implementações concretas (ex.: GT06)."""
 
-
-class GT06TcpServer:
     def __init__(self) -> None:
         self._settings = get_settings()
         self._connection_semaphore = asyncio.Semaphore(self._settings.max_connections)
         self._server: asyncio.Server | None = None
+        self._registry = create_default_registry()
+        self._detector = ProtocolDetector(self._registry)
 
     @property
     def active_connections(self) -> int:
@@ -66,7 +53,14 @@ class GT06TcpServer:
             start_serving=True,
         )
         addr = self._server.sockets[0].getsockname() if self._server.sockets else ("?", "?")
-        log_with_fields(logger, 20, "GT06 TCP server listening", host=addr[0], port=addr[1])
+        log_with_fields(
+            logger,
+            20,
+            "TCP gateway listening",
+            host=addr[0],
+            port=addr[1],
+            protocols=self._registry.names(),
+        )
 
     async def stop(self) -> None:
         if self._server is not None:
@@ -88,14 +82,21 @@ class GT06TcpServer:
 
         connection_id = str(uuid.uuid4())
         peer = writer.get_extra_info("peername")
-        peer_str = f"{peer[0]}:{peer[1]}" if peer else "unknown"
-        buffer = bytearray()
-        received_any_data = False
-        last_rx_hex: str | None = None
+        if peer:
+            remote_host = str(peer[0])
+            remote_port = int(peer[1]) if len(peer) > 1 else 0
+            peer_str = f"{remote_host}:{remote_port}"
+        else:
+            remote_host = "unknown"
+            remote_port = 0
+            peer_str = "unknown"
+
+        lifecycle = SessionLifecycle(session_id=connection_id, remote_ip=peer_str)
 
         bind_context(connection_id=connection_id, remote_ip=peer_str)
         await session_manager.register(connection_id, peer_str, writer)
         TCP_CONNECTIONS_ACTIVE.set(session_manager.active_count)
+        lifecycle.on_connect(session_manager.active_count)
         log_with_fields(
             logger,
             20,
@@ -105,136 +106,39 @@ class GT06TcpServer:
         )
 
         try:
-            while True:
-                try:
-                    data = await asyncio.wait_for(
-                        reader.read(self._settings.read_buffer_size),
-                        timeout=self._settings.connection_idle_timeout,
-                    )
-                except TimeoutError as exc:
-                    raise ConnectionTimeoutError(
-                        f"Idle timeout connection_id={connection_id}"
-                    ) from exc
+            protocol, initial_buffer = await self._detect_protocol(
+                reader,
+                lifecycle,
+                connection_id=connection_id,
+                remote_ip=peer_str,
+            )
+            if protocol is None:
+                return
 
-                if not data:
-                    if not received_any_data:
-                        log_with_fields(
-                            logger,
-                            30,
-                            "Client closed connection before sending data.",
-                            remote_ip=peer_str,
-                            connection_id=connection_id,
-                        )
-                    break
-
-                received_any_data = True
-                last_rx_hex = data.hex()
+            if protocol.name == UNKNOWN_PROTOCOL_NAME:
                 log_with_fields(
                     logger,
                     20,
-                    f"Bytes recebidos: {len(data)}",
-                    bytes_received=len(data),
-                    hex=last_rx_hex,
-                    remote_ip=peer_str,
-                    connection_id=connection_id,
+                    "Entering Learning Mode",
+                    session_id=connection_id,
+                    remote_ip=remote_host,
+                    remote_port=remote_port,
                 )
 
-                BYTES_RECEIVED.inc(len(data))
-                buffer.extend(data)
-                frames, buffer = extract_packets(buffer)
-
-                for frame in frames:
-                    PACKETS_RECEIVED.inc()
-                    frame_hex = frame.hex()
-
-                    try:
-                        packet = parse_packet(frame)
-                    except Exception:
-                        PACKETS_INVALID.inc()
-                        logger.exception("Parser exception")
-                        log_with_fields(
-                            logger,
-                            40,
-                            "Parser exception",
-                            hex=frame_hex,
-                            remote_ip=peer_str,
-                            connection_id=connection_id,
-                        )
-                        continue
-
-                    if packet is None:
-                        PACKETS_INVALID.inc()
-                        reason = _discard_reason(frame)
-                        log_with_fields(
-                            logger,
-                            30,
-                            reason,
-                            hex=frame_hex,
-                            remote_ip=peer_str,
-                            connection_id=connection_id,
-                        )
-                        continue
-
-                    trace_id = new_trace_id()
-                    bind_context(
-                        trace_id=trace_id,
-                        packet_type=f"0x{packet.protocol_number:02X}",
-                    )
-
-                    if packet.imei:
-                        await session_manager.bind_imei(connection_id, packet.imei)
-                        bind_context(imei=packet.imei)
-
-                    current = await session_manager.get_by_connection(connection_id)
-                    tracker_imei = packet.imei or (current.imei if current else None)
-
-                    domain_message = gt06_domain_mapper.map_packet(
-                        packet,
-                        tracker_imei=tracker_imei,
-                        connection_id=connection_id,
-                        remote_ip=peer_str,
-                        trace_id=trace_id,
-                    )
-
-                    if domain_message is not None:
-                        bind_context(event_type=domain_message.message_type.value)
-                        await event_publisher.publish(domain_message)
-
-                        if isinstance(domain_message, DeviceHeartbeat):
-                            await session_manager.record_heartbeat(connection_id)
-                        else:
-                            await session_manager.touch(connection_id)
-
-                    ack = build_ack(packet.protocol_number, packet.serial_number)
-                    writer.write(ack)
-                    await writer.drain()
-                    BYTES_SENT.inc(len(ack))
-                    ACKS_SENT.inc()
-
-        except TrackerError as exc:
-            log_with_fields(
-                logger,
-                30,
-                "Tracker error on connection",
-                error=str(exc),
-                hex=last_rx_hex,
-                remote_ip=peer_str,
+            await protocol.handle_connection(
+                reader,
+                writer,
                 connection_id=connection_id,
-            )
-        except Exception:
-            logger.exception("Unexpected connection error")
-            log_with_fields(
-                logger,
-                40,
-                "Unexpected connection error details",
-                hex=last_rx_hex,
                 remote_ip=peer_str,
-                connection_id=connection_id,
+                lifecycle=lifecycle,
+                initial_buffer=initial_buffer,
+                remote_port=remote_port,
             )
         finally:
             removed = await session_manager.remove(connection_id)
             TCP_CONNECTIONS_CLOSED.inc()
             TCP_CONNECTIONS_ACTIVE.set(session_manager.active_count)
+            lifecycle.on_close(session_manager.active_count)
 
             if removed and removed.imei:
                 disconnect = DeviceConnection(
@@ -259,3 +163,94 @@ class GT06TcpServer:
 
             if acquired:
                 self._connection_semaphore.release()
+
+    async def _detect_protocol(
+        self,
+        reader: StreamReader,
+        lifecycle: SessionLifecycle,
+        *,
+        connection_id: str,
+        remote_ip: str,
+    ):
+        """Lê bytes iniciais até Fingerprint + Registry selecionarem o protocolo."""
+        buffer = bytearray()
+
+        while True:
+            try:
+                data = await asyncio.wait_for(
+                    reader.read(self._settings.read_buffer_size),
+                    timeout=self._settings.connection_idle_timeout,
+                )
+            except TimeoutError:
+                timeout_exc = ConnectionTimeoutError(
+                    f"Idle timeout connection_id={connection_id}"
+                )
+                lifecycle.set_close_reason(CLOSE_TIMEOUT)
+                lifecycle.on_exception(timeout_exc, close_reason=CLOSE_TIMEOUT)
+                log_with_fields(
+                    logger,
+                    30,
+                    "Tracker error on connection",
+                    error=str(timeout_exc),
+                    hex=buffer.hex() if buffer else None,
+                    remote_ip=remote_ip,
+                    connection_id=connection_id,
+                )
+                return None, buffer
+
+            if not data:
+                lifecycle.set_close_reason(CLOSE_CLIENT)
+                if not buffer:
+                    log_with_fields(
+                        logger,
+                        30,
+                        "Client closed connection before sending data.",
+                        remote_ip=remote_ip,
+                        connection_id=connection_id,
+                    )
+                return None, buffer
+
+            last_rx_hex = data.hex()
+            lifecycle.on_rx(data)
+            log_with_fields(
+                logger,
+                20,
+                f"Bytes recebidos: {len(data)}",
+                bytes_received=len(data),
+                hex=last_rx_hex,
+                remote_ip=remote_ip,
+                connection_id=connection_id,
+            )
+            BYTES_RECEIVED.inc(len(data))
+            buffer.extend(data)
+
+            protocol = self._detector.detect(bytes(buffer))
+            if protocol is not None:
+                log_with_fields(
+                    logger,
+                    20,
+                    "Protocol resolved",
+                    protocol=protocol.name,
+                    connection_id=connection_id,
+                    remote_ip=remote_ip,
+                    learning_mode=protocol.name == UNKNOWN_PROTOCOL_NAME,
+                )
+                return protocol, buffer
+
+            if len(buffer) >= MIN_DETECT_BYTES:
+                # Sem Unknown registrado — não deve ocorrer no bootstrap padrão.
+                lifecycle.set_close_reason(CLOSE_SERVER)
+                log_with_fields(
+                    logger,
+                    30,
+                    "No protocol matched and Learning Mode unavailable",
+                    connection_id=connection_id,
+                    remote_ip=remote_ip,
+                    hex=buffer.hex(),
+                    bytes=len(buffer),
+                )
+                return None, buffer
+
+
+# Compatibilidade com bootstrap legado
+GT06TcpServer = GatewayTcpServer

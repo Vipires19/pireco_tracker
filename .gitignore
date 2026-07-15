@@ -101,6 +101,10 @@ lerna-debug.log*
 postgres_data/
 redis_data/
 
+# --- Gateway Learning Mode captures ---
+gateway/data/sessions/*.jsonl
+gateway/data/promotions/promo-*.json
+
 # --- Testing ---
 playwright-report/
 test-results/

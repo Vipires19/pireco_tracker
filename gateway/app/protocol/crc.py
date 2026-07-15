@@ -1,13 +1,5 @@
-"""CRC-ITU (X25) utilizado pelo protocolo GT06."""
+"""Shim — crc GT06 legado → protocols.gt06.crc."""
 
+from app.protocols.gt06.crc import crc16_x25, verify_crc
 
-def crc16_x25(data: bytes) -> int:
-    crc = 0xFFFF
-    for byte in data:
-        crc ^= byte
-        for _ in range(8):
-            if crc & 0x0001:
-                crc = (crc >> 1) ^ 0x8408
-            else:
-                crc >>= 1
-    return (~crc) & 0xFFFF
+__all__ = ["crc16_x25", "verify_crc"]

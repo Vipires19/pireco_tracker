@@ -44,7 +44,7 @@ class Gt06DomainMapper:
             "received_at": received_at,
             "connection_id": connection_id,
             "remote_ip": remote_ip,
-            "source_protocol": "gt06",
+            "source_protocol": getattr(packet, "protocol", None) or "gt06",
             "serial_number": packet.serial_number,
             "payload_hash": payload_hash,
         }

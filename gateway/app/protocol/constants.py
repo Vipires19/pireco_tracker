@@ -1,15 +1,15 @@
-"""Constantes do protocolo GT06."""
+"""Shim — constantes GT06 legadas → protocols.gt06.packets."""
 
-from enum import IntEnum
+from app.protocols.gt06.packets import (
+    START_BYTES_LONG,
+    START_BYTES_SHORT,
+    STOP_BYTES,
+    ProtocolNumber,
+)
 
-START_BYTES_SHORT = b"\x78\x78"
-START_BYTES_LONG = b"\x79\x79"
-STOP_BYTES = b"\x0d\x0a"
-
-
-class ProtocolNumber(IntEnum):
-    LOGIN = 0x01
-    GPS_LOCATION = 0x12
-    HEARTBEAT = 0x13
-    ALARM = 0x16
-    GPS_LOCATION_4G = 0x22
+__all__ = [
+    "START_BYTES_LONG",
+    "START_BYTES_SHORT",
+    "STOP_BYTES",
+    "ProtocolNumber",
+]

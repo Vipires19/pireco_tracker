@@ -1,11 +1,15 @@
 """Gerenciamento de sessões TCP ativas — fonte de verdade das conexões."""
 
 import asyncio
+import logging
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
 from app.core.logging import get_logger
+from app.core.observability import log_with_fields
+from app.observability.formatting import bytes_to_ascii, bytes_to_hex
+from app.observability.metrics import TX_BYTES_TOTAL
 
 logger = get_logger(__name__)
 
@@ -118,6 +122,19 @@ class SessionManager:
             session.writer.write(payload)
             await session.writer.drain()
             session.touch()
+            TX_BYTES_TOTAL.inc(len(payload))
+            tx_fields: dict[str, Any] = {
+                "event": "TX",
+                "session_id": session.connection_id,
+                "remote_ip": session.remote_ip,
+                "protocol": "gt06",
+                "bytes": len(payload),
+                "source": "command",
+            }
+            if logger.isEnabledFor(logging.INFO):
+                tx_fields["hex"] = bytes_to_hex(payload)
+                tx_fields["ascii"] = bytes_to_ascii(payload)
+            log_with_fields(logger, logging.INFO, "TX", **tx_fields)
             return True
         except Exception:
             logger.exception("Failed to send command imei=%s", imei)

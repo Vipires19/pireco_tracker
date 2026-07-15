@@ -20,6 +20,7 @@ class GatewaySettings(
     max_connections: int = 10_000
     read_buffer_size: int = 4096
     connection_idle_timeout: int = 300
+    sessions_data_dir: str = "data/sessions"
 
 
 @lru_cache

@@ -9,7 +9,7 @@ from app.core.logging import get_logger, setup_logging
 from app.core.observability import log_with_fields
 from app.observability.metrics import metrics_payload
 from app.publisher.redis_publisher import event_publisher
-from app.server import GT06TcpServer
+from app.server import GatewayTcpServer
 from app.sessions.manager import session_manager
 
 logger = get_logger(__name__)
@@ -100,7 +100,7 @@ async def run_gateway() -> None:
     logger.info("Starting gateway env=%s", settings.app_env)
 
     await event_publisher.connect()
-    tcp_server = GT06TcpServer()
+    tcp_server = GatewayTcpServer()
     health_server = start_health_server()
 
     await tcp_server.start()
