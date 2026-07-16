@@ -19,7 +19,6 @@ from app.observability.metrics import (
     TCP_CONNECTIONS_ACTIVE,
     TX_BYTES_TOTAL,
 )
-from app.protocol.constants import ProtocolNumber
 
 logger = get_logger(__name__)
 
@@ -30,11 +29,13 @@ CLOSE_PARSER = "parser_error"
 CLOSE_SOCKET = "socket_error"
 CLOSE_EXCEPTION = "exception"
 
+# Valores alinhados a ProtocolNumber (gt06.packets). Evita import no topo:
+# session_lifecycle → protocol → gt06.base → session_lifecycle.
 _PACKET_EVENTS: dict[int, str] = {
-    ProtocolNumber.LOGIN: "LOGIN_PACKET",
-    ProtocolNumber.GPS_LOCATION: "GPS_PACKET",
-    ProtocolNumber.GPS_LOCATION_4G: "GPS_PACKET",
-    ProtocolNumber.HEARTBEAT: "HEARTBEAT",
+    0x01: "LOGIN_PACKET",  # LOGIN
+    0x12: "GPS_PACKET",  # GPS_LOCATION
+    0x22: "GPS_PACKET",  # GPS_LOCATION_4G
+    0x13: "HEARTBEAT",  # HEARTBEAT
 }
 
 
