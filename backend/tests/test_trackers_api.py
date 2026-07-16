@@ -298,6 +298,31 @@ async def test_trackers_audit_logs(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_trackers_cannot_set_installed_status_manually(client: AsyncClient) -> None:
+    token = await _login(client, "admin@example.com", "admin123")
+    headers = {"Authorization": f"Bearer {token}"}
+    imei = _unique_imei()
+
+    create = await client.post(
+        f"{BASE}/trackers",
+        headers=headers,
+        json=_tracker_payload(imei, status="IN_STOCK"),
+    )
+    assert create.status_code == 201
+    tracker_id = create.json()["id"]
+
+    response = await client.patch(
+        f"{BASE}/trackers/{tracker_id}/status",
+        headers=headers,
+        json={"status": "INSTALLED"},
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "tracker_status_install_forbidden"
+
+    await client.delete(f"{BASE}/trackers/{tracker_id}", headers=headers)
+
+
+@pytest.mark.asyncio
 async def test_trackers_delete_missing_returns_404(client: AsyncClient) -> None:
     token = await _login(client, "admin@example.com", "admin123")
     headers = {"Authorization": f"Bearer {token}"}

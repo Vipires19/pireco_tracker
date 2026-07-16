@@ -68,10 +68,7 @@ export function InstallationFormDrawer({
   );
 
   const installableTrackers = useMemo(
-    () =>
-      trackers.filter((tracker) =>
-        ["IN_STOCK", "PENDING_INSTALLATION", "NEW"].includes(tracker.status),
-      ),
+    () => trackers.filter((tracker) => tracker.status === "IN_STOCK"),
     [trackers],
   );
 

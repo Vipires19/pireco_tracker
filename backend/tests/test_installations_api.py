@@ -276,6 +276,60 @@ async def test_installations_finish_endpoint(client: AsyncClient) -> None:
 
 
 @pytest.mark.asyncio
+async def test_tracker_in_stock_releases_active_installation(client: AsyncClient) -> None:
+    token = await _login(client, "admin@example.com", "admin123")
+    headers = {"Authorization": f"Bearer {token}"}
+    customer_id = await _create_customer(client, headers)
+    vehicle_id = await _create_vehicle(client, headers, customer_id)
+    tracker_id = await _create_tracker(client, headers)
+
+    create = await client.post(
+        f"{BASE}/installations",
+        headers=headers,
+        json=_installation_payload(tracker_id, vehicle_id),
+    )
+    assert create.status_code == 201
+
+    to_stock = await client.patch(
+        f"{BASE}/trackers/{tracker_id}/status",
+        headers=headers,
+        json={"status": "IN_STOCK"},
+    )
+    assert to_stock.status_code == 200
+    assert to_stock.json()["status"] == "IN_STOCK"
+
+    active = await client.get(
+        f"{BASE}/installations?tracker_id={tracker_id}&active_only=true",
+        headers=headers,
+    )
+    assert active.status_code == 200
+    assert active.json()["total"] == 0
+
+
+@pytest.mark.asyncio
+async def test_installations_rejects_non_installable_tracker_status(client: AsyncClient) -> None:
+    token = await _login(client, "admin@example.com", "admin123")
+    headers = {"Authorization": f"Bearer {token}"}
+    customer_id = await _create_customer(client, headers)
+    vehicle_id = await _create_vehicle(client, headers, customer_id)
+    tracker_id = await _create_tracker(client, headers)
+
+    await client.patch(
+        f"{BASE}/trackers/{tracker_id}/status",
+        headers=headers,
+        json={"status": "MAINTENANCE"},
+    )
+
+    response = await client.post(
+        f"{BASE}/installations",
+        headers=headers,
+        json=_installation_payload(tracker_id, vehicle_id),
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == "tracker_not_installable"
+
+
+@pytest.mark.asyncio
 async def test_installations_remove_preserves_history(client: AsyncClient) -> None:
     token = await _login(client, "admin@example.com", "admin123")
     headers = {"Authorization": f"Bearer {token}"}

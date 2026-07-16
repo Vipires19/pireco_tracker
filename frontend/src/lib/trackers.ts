@@ -202,6 +202,16 @@ export function formatRelativeCommunication(value: string | null): string {
   return days === 1 ? "Há 1 dia" : `Há ${days} dias`;
 }
 
+export function formatProtocol(value: string | null): string {
+  if (!value) return "Desconhecido";
+  return value.replace(/_/g, " ").toUpperCase();
+}
+
+export function displayOrUnknown(value: string | null | undefined): string {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : "Desconhecido";
+}
+
 export const TRACKER_ORIGIN_LABELS: Record<TrackerOrigin, string> = {
   MANUAL: "Manual",
   AUTO_DISCOVERY: "Detectado Automaticamente",
@@ -217,6 +227,8 @@ export function mapTrackerError(detail: string): string {
     imei_already_exists: "Já existe um rastreador com este IMEI",
     tracker_not_found: "Rastreador não encontrado",
     tracker_has_active_assignment: "Rastreador possui vínculo ativo e não pode ser excluído",
+    tracker_status_install_forbidden:
+      "Status Instalado é definido automaticamente pela instalação",
     invalid_imei: "IMEI inválido (15 dígitos)",
     invalid_iccid: "ICCID inválido",
     invalid_sim_imei: "IMEI do chip inválido",

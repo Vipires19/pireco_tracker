@@ -14,7 +14,7 @@ from app.protocols.gt06.packets import (
     ProtocolNumber,
     packet_type_for,
 )
-from app.protocols.gt06.utils import decode_login_imei, imei_to_bcd
+from app.protocols.gt06.utils import decode_login_imei, encode_gps_course_status, imei_to_bcd
 
 
 class Gt06Codec:
@@ -150,17 +150,15 @@ class Gt06Codec:
         )
         lat_raw = int(abs(latitude) * 1_800_000)
         lon_raw = int(abs(longitude) * 1_800_000)
-        course_status = course & 0x03FF
-        if latitude < 0:
-            course_status |= 0x0400
-        if longitude < 0:
-            course_status |= 0x0800
+        # 1 byte: high nibble = GPS info length (12), low nibble = satellites
+        gps_info = 0xC0 | (satellites & 0x0F)
+        course_status = encode_gps_course_status(course, latitude=latitude, longitude=longitude)
         payload = (
             datetime_bytes
-            + bytes([0x0C, satellites])
+            + bytes([gps_info])
             + lat_raw.to_bytes(4, "big")
             + lon_raw.to_bytes(4, "big")
-            + bytes([int(speed_kmh)])
+            + bytes([min(int(speed_kmh), 255)])
             + course_status.to_bytes(2, "big")
         )
         return self.encode_packet(ProtocolNumber.GPS_LOCATION, payload, serial_number)

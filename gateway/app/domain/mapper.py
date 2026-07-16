@@ -21,6 +21,27 @@ from app.protocol.packets import (
     decode_gps_datetime,
     decode_gps_speed,
 )
+from app.protocols.gt06.utils import decode_login_firmware
+from app.knowledge.manufacturer import ManufacturerRegistry
+from app.knowledge.tac import TacDatabase
+
+
+_tac_db = TacDatabase()
+_manufacturers = ManufacturerRegistry()
+
+
+def _resolve_device_identity(imei: str) -> dict[str, str | None]:
+    """Identifica fabricante/modelo via TAC apenas quando não ambíguo."""
+    result = _tac_db.lookup_imei(imei)
+    if result.ambiguous or not result.manufacturers or not result.models:
+        return {"manufacturer": None, "model": None}
+
+    manufacturer_id = result.manufacturers[0]
+    mfr = _manufacturers.get(manufacturer_id)
+    return {
+        "manufacturer": mfr.name if mfr else manufacturer_id,
+        "model": result.models[0],
+    }
 
 
 class Gt06DomainMapper:
@@ -37,6 +58,7 @@ class Gt06DomainMapper:
         imei = packet.imei or tracker_imei
         tid = trace_id or new_trace_id()
         payload_hash = compute_payload_hash(packet.raw)
+        protocol_name = (getattr(packet, "protocol", None) or "gt06").strip().lower()
 
         base = {
             "schema_version": SCHEMA_VERSION,
@@ -44,7 +66,7 @@ class Gt06DomainMapper:
             "received_at": received_at,
             "connection_id": connection_id,
             "remote_ip": remote_ip,
-            "source_protocol": getattr(packet, "protocol", None) or "gt06",
+            "source_protocol": protocol_name,
             "serial_number": packet.serial_number,
             "payload_hash": payload_hash,
         }
@@ -52,7 +74,16 @@ class Gt06DomainMapper:
         if packet.protocol_number == ProtocolNumber.LOGIN:
             if not imei:
                 return None
-            return DeviceConnection(tracker_imei=imei, action="login", **base)
+            identity = _resolve_device_identity(imei)
+            firmware = decode_login_firmware(packet.payload)
+            return DeviceConnection(
+                tracker_imei=imei,
+                action="login",
+                manufacturer=identity["manufacturer"],
+                model=identity["model"],
+                firmware=firmware,
+                **base,
+            )
 
         if not imei:
             return None

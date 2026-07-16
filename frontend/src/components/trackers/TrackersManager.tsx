@@ -1,26 +1,29 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Activity,
   ArrowDownUp,
   Cpu,
   Filter,
-  MoreHorizontal,
   Pencil,
   Plus,
   RadioTower,
   RefreshCw,
   Search,
+  Settings,
   Signal,
   Sparkles,
   Trash2,
+  Unplug,
 } from "lucide-react";
 
 import {
   InstallationFormDrawer,
   type InstallationFormValues,
 } from "@/components/installations/InstallationFormDrawer";
+import { ActionMenu } from "@/components/ui/ActionMenu";
 import {
   TrackerFormDrawer,
   type TrackerFormValues,
@@ -31,12 +34,17 @@ import { ApiError } from "@/lib/api";
 import { fetchCustomers, type Customer } from "@/lib/customers";
 import {
   createInstallation,
+  fetchInstallations,
   mapInstallationError,
+  updateInstallation,
+  type Installation,
 } from "@/lib/installations";
 import {
   createTracker,
   deleteTracker,
+  displayOrUnknown,
   fetchTrackers,
+  formatProtocol,
   formatRelativeCommunication,
   HEALTH_STATUS_LABELS,
   mapTrackerError,
@@ -75,6 +83,7 @@ const defaultFilters: Filters = {
 export function TrackersManager() {
   const { accessToken, user } = useAuth();
   const { showToast } = useToast();
+  const router = useRouter();
 
   const [data, setData] = useState<TrackerListResponse | null>(null);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -89,12 +98,14 @@ export function TrackersManager() {
   const [drawerMode, setDrawerMode] = useState<"create" | "edit">("create");
   const [selectedTracker, setSelectedTracker] = useState<Tracker | null>(null);
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
-  const [menuOpenId, setMenuOpenId] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Tracker | null>(null);
   const [statusTarget, setStatusTarget] = useState<Tracker | null>(null);
   const [nextStatus, setNextStatus] = useState<TrackerStatus>("IN_STOCK");
   const [installDrawerOpen, setInstallDrawerOpen] = useState(false);
   const [installTracker, setInstallTracker] = useState<Tracker | null>(null);
+  const [activeInstallations, setActiveInstallations] = useState<Map<number, Installation>>(
+    new Map(),
+  );
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -130,6 +141,20 @@ export function TrackersManager() {
     void loadReferenceData();
   }, [loadReferenceData]);
 
+  const loadActiveInstallations = useCallback(async () => {
+    if (!accessToken) return;
+    try {
+      const response = await fetchInstallations(accessToken, { active_only: true, page_size: 100 });
+      const map = new Map<number, Installation>();
+      for (const item of response.items) {
+        map.set(item.tracker_id, item);
+      }
+      setActiveInstallations(map);
+    } catch {
+      // Não bloqueia a listagem principal.
+    }
+  }, [accessToken]);
+
   const loadTrackers = useCallback(async () => {
     if (!accessToken) return;
     setLoading(true);
@@ -146,6 +171,7 @@ export function TrackersManager() {
         sort_order: filters.sort_order,
       });
       setData(response);
+      await loadActiveInstallations();
     } catch (err) {
       showToast(
         err instanceof ApiError ? mapTrackerError(err.message) : "Erro ao carregar rastreadores",
@@ -165,16 +191,50 @@ export function TrackersManager() {
     filters.sort_order,
     page,
     showToast,
+    loadActiveInstallations,
   ]);
 
   useEffect(() => {
     void loadTrackers();
   }, [loadTrackers]);
 
+  // Atualiza Online/Offline e last_seen sem refresh manual.
+  useEffect(() => {
+    if (!accessToken) return;
+    const timer = window.setInterval(() => {
+      void loadTrackers();
+    }, 15_000);
+    return () => window.clearInterval(timer);
+  }, [accessToken, loadTrackers]);
+
   function openInstall(tracker: Tracker) {
     setInstallTracker(tracker);
     setInstallDrawerOpen(true);
-    setMenuOpenId(null);
+  }
+
+  async function handleUninstall(tracker: Tracker) {
+    if (!accessToken) return;
+    const installation = activeInstallations.get(tracker.id);
+    if (!installation) {
+      showToast("Nenhuma instalação ativa encontrada para este rastreador", "error");
+      return;
+    }
+    if (!window.confirm(`Desinstalar o rastreador ${tracker.imei}? O equipamento voltará para estoque.`)) {
+      return;
+    }
+    try {
+      await updateInstallation(accessToken, installation.id, {
+        status: "REMOVED",
+        removal_reason: "Desinstalação via ERP",
+      });
+      showToast("Rastreador desinstalado e movido para estoque");
+      await loadTrackers();
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? mapInstallationError(err.message) : "Erro ao desinstalar",
+        "error",
+      );
+    }
   }
 
   async function handleInstallSave(values: InstallationFormValues) {
@@ -200,7 +260,6 @@ export function TrackersManager() {
     setDrawerMode("edit");
     setSelectedTracker(tracker);
     setDrawerOpen(true);
-    setMenuOpenId(null);
   }
 
   function buildPayload(values: TrackerFormValues): TrackerPayload {
@@ -249,7 +308,6 @@ export function TrackersManager() {
       await deleteTracker(accessToken, deleteTarget.id);
       showToast("Rastreador excluído com sucesso");
       setDeleteTarget(null);
-      setMenuOpenId(null);
       await loadTrackers();
     } catch (err) {
       showToast(
@@ -265,7 +323,6 @@ export function TrackersManager() {
       await updateTrackerStatus(accessToken, statusTarget.id, nextStatus);
       showToast("Status atualizado com sucesso");
       setStatusTarget(null);
-      setMenuOpenId(null);
       await loadTrackers();
     } catch (err) {
       showToast(
@@ -277,8 +334,7 @@ export function TrackersManager() {
 
   function openStatusDialog(tracker: Tracker) {
     setStatusTarget(tracker);
-    setNextStatus(tracker.status);
-    setMenuOpenId(null);
+    setNextStatus(tracker.status === "INSTALLED" ? "IN_STOCK" : tracker.status);
   }
 
   const items = data?.items ?? [];
@@ -421,17 +477,13 @@ export function TrackersManager() {
             <TrackerCard
               key={tracker.id}
               tracker={tracker}
-              menuOpen={menuOpenId === tracker.id}
-              onToggleMenu={() =>
-                setMenuOpenId((current) => (current === tracker.id ? null : tracker.id))
-              }
+              activeInstallation={activeInstallations.get(tracker.id) ?? null}
               onEdit={() => openEdit(tracker)}
               onStatus={() => openStatusDialog(tracker)}
-              onDelete={() => {
-                setDeleteTarget(tracker);
-                setMenuOpenId(null);
-              }}
+              onDelete={() => setDeleteTarget(tracker)}
               onInstall={() => openInstall(tracker)}
+              onEditInstallation={(installationId) => router.push(`/instalacoes?edit=${installationId}`)}
+              onUninstall={() => void handleUninstall(tracker)}
             />
           ))}
         </div>
@@ -504,7 +556,9 @@ export function TrackersManager() {
             onChange={(e) => setNextStatus(e.target.value as TrackerStatus)}
             className="mt-4 w-full rounded-lg border border-surface-border bg-surface px-3 py-2.5 text-sm outline-none ring-brand focus:ring-2"
           >
-            {Object.entries(TRACKER_STATUS_LABELS).map(([value, label]) => (
+            {Object.entries(TRACKER_STATUS_LABELS)
+              .filter(([value]) => value !== "INSTALLED")
+              .map(([value, label]) => (
               <option key={value} value={value}>
                 {label}
               </option>
@@ -547,22 +601,25 @@ export function TrackersManager() {
 
 function TrackerCard({
   tracker,
-  menuOpen,
-  onToggleMenu,
+  activeInstallation,
   onEdit,
   onStatus,
   onDelete,
   onInstall,
+  onEditInstallation,
+  onUninstall,
 }: {
   tracker: Tracker;
-  menuOpen: boolean;
-  onToggleMenu: () => void;
+  activeInstallation: Installation | null;
   onEdit: () => void;
   onStatus: () => void;
   onDelete: () => void;
   onInstall: () => void;
+  onEditInstallation: (installationId: number) => void;
+  onUninstall: () => void;
 }) {
-  const canInstall = tracker.status === "IN_STOCK" || tracker.status === "PENDING_INSTALLATION";
+  const canInstall = tracker.status === "IN_STOCK";
+  const hasActiveInstallation = activeInstallation != null;
   return (
     <article className="relative flex flex-col rounded-xl border border-surface-border bg-surface-card p-5 transition hover:border-brand/30">
       <div className="flex items-start justify-between gap-3">
@@ -575,23 +632,27 @@ function TrackerCard({
             <p className="mt-0.5 font-mono text-xs text-surface-muted">IMEI {tracker.imei}</p>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={onToggleMenu}
-          className="rounded-lg p-2 hover:bg-slate-700/40"
-          aria-label="Mais ações"
-        >
-          <MoreHorizontal className="h-4 w-4" />
-        </button>
-        {menuOpen && (
-          <ActionMenu
-            onEdit={onEdit}
-            onStatus={onStatus}
-            onDelete={onDelete}
-            onInstall={onInstall}
-            canInstall={canInstall}
-          />
-        )}
+        <ActionMenu
+          ariaLabel={`Ações do rastreador ${tracker.imei}`}
+          items={[
+            { label: "Instalar", icon: RadioTower, onClick: onInstall, hidden: !canInstall },
+            {
+              label: "Editar Instalação",
+              icon: Settings,
+              onClick: () => onEditInstallation(activeInstallation!.id),
+              hidden: !hasActiveInstallation,
+            },
+            {
+              label: "Desinstalar",
+              icon: Unplug,
+              onClick: onUninstall,
+              hidden: !hasActiveInstallation,
+            },
+            { label: "Editar", icon: Pencil, onClick: onEdit },
+            { label: "Alterar Status", icon: RefreshCw, onClick: onStatus },
+            { label: "Excluir", icon: Trash2, onClick: onDelete, danger: true },
+          ]}
+        />
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
@@ -601,15 +662,15 @@ function TrackerCard({
       </div>
 
       <dl className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-        <Detail label="Fabricante" value={tracker.manufacturer} />
-        <Detail label="Firmware" value={tracker.firmware} />
+        <Detail label="Fabricante" value={displayOrUnknown(tracker.manufacturer)} />
+        <Detail label="Firmware" value={displayOrUnknown(tracker.firmware)} />
         <Detail label="Operadora" value={tracker.carrier} />
         <Detail label="Número do chip" value={tracker.tracker_phone_number} />
         <Detail
           label="Última comunicação"
           value={formatRelativeCommunication(tracker.last_seen_at)}
         />
-        <Detail label="Protocolo" value={tracker.protocol} />
+        <Detail label="Protocolo" value={formatProtocol(tracker.protocol)} />
         <Detail label="Último IP" value={tracker.last_ip} />
         <Detail label="ICCID" value={tracker.sim_iccid} />
         {tracker.last_latitude != null && tracker.last_longitude != null && (
@@ -637,6 +698,24 @@ function TrackerCard({
           >
             Instalar
           </button>
+        )}
+        {hasActiveInstallation && (
+          <>
+            <button
+              type="button"
+              onClick={() => onEditInstallation(activeInstallation.id)}
+              className="rounded-lg border border-surface-border px-3 py-1.5 text-xs hover:bg-slate-700/30"
+            >
+              Editar Instalação
+            </button>
+            <button
+              type="button"
+              onClick={onUninstall}
+              className="rounded-lg border border-orange-500/30 px-3 py-1.5 text-xs text-orange-300 hover:bg-orange-500/10"
+            >
+              Desinstalar
+            </button>
+          </>
         )}
         <button
           type="button"
@@ -745,54 +824,6 @@ function OriginBadge({ origin }: { origin: TrackerOrigin }) {
       {origin === "AUTO_DISCOVERY" && <Sparkles className="h-3 w-3" />}
       {TRACKER_ORIGIN_LABELS[origin]}
     </span>
-  );
-}
-
-function ActionMenu({
-  onEdit,
-  onStatus,
-  onDelete,
-  onInstall,
-  canInstall,
-}: {
-  onEdit: () => void;
-  onStatus: () => void;
-  onDelete: () => void;
-  onInstall: () => void;
-  canInstall: boolean;
-}) {
-  return (
-    <div className="absolute right-4 top-14 z-10 w-44 rounded-xl border border-surface-border bg-surface-card p-1 shadow-2xl">
-      {canInstall && <MenuButton icon={RadioTower} label="Instalar" onClick={onInstall} />}
-      <MenuButton icon={Pencil} label="Editar" onClick={onEdit} />
-      <MenuButton icon={RefreshCw} label="Alterar Status" onClick={onStatus} />
-      <MenuButton icon={Trash2} label="Excluir" onClick={onDelete} danger />
-    </div>
-  );
-}
-
-function MenuButton({
-  icon: Icon,
-  label,
-  onClick,
-  danger,
-}: {
-  icon: React.ElementType;
-  label: string;
-  onClick: () => void;
-  danger?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-700/40 ${
-        danger ? "text-red-400" : ""
-      }`}
-    >
-      <Icon className="h-4 w-4" />
-      {label}
-    </button>
   );
 }
 

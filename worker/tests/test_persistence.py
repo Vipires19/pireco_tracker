@@ -112,10 +112,12 @@ async def test_login_updates_last_seen() -> None:
         trace_id="trace-login",
         tracker_imei="867686031234567",
         connection_id="c1",
-        remote_ip="192.168.1.10",
+        remote_ip="192.168.1.10:55240",
         source_protocol="gt06",
         received_at=now,
         action="login",
+        manufacturer="Jimi IoT",
+        model="J16 Pro",
     )
 
     await service.process(session, message)
@@ -124,6 +126,8 @@ async def test_login_updates_last_seen() -> None:
     assert tracker.health_status == HEALTH_ONLINE
     assert tracker.last_ip == "192.168.1.10"
     assert tracker.protocol == "gt06"
+    assert tracker.manufacturer == "Jimi IoT"
+    assert tracker.model == "J16 Pro"
 
 
 @pytest.mark.asyncio

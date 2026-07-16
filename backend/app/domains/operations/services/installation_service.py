@@ -34,10 +34,11 @@ from app.kernel.logger import get_logger
 
 logger = get_logger(__name__)
 
-_NON_INSTALLABLE_STATUSES = (
-    TrackerStatus.LOST,
-    TrackerStatus.DAMAGED,
-    TrackerStatus.DISPOSED,
+# Consistência de domínio: só é possível iniciar instalação a partir destes estados.
+_INSTALLABLE_STATUSES = (
+    TrackerStatus.NEW,
+    TrackerStatus.IN_STOCK,
+    TrackerStatus.PENDING_INSTALLATION,
 )
 
 
@@ -96,7 +97,7 @@ class InstallationService:
         return self._build_response(installation, tracker, vehicle, customer, technician)
 
     async def _validate_tracker_installable(self, tracker: Tracker) -> None:
-        if TrackerStatus(tracker.status) in _NON_INSTALLABLE_STATUSES:
+        if TrackerStatus(tracker.status) not in _INSTALLABLE_STATUSES:
             raise ValueError("tracker_not_installable")
 
     async def _validate_primary_unique(self, vehicle_id: int, *, exclude_id: int | None = None) -> None:
@@ -191,7 +192,6 @@ class InstallationService:
         tracker = await self._trackers.get_by_id(payload.tracker_id)
         if tracker is None:
             raise ValueError("tracker_not_found")
-        await self._validate_tracker_installable(tracker)
 
         vehicle = await self._vehicles.get_by_id(payload.vehicle_id)
         if vehicle is None:
@@ -200,6 +200,8 @@ class InstallationService:
         active = await self._assignments.get_active_by_tracker(payload.tracker_id)
         if active is not None:
             raise ValueError("tracker_already_assigned")
+
+        await self._validate_tracker_installable(tracker)
 
         if payload.installation_type == InstallationType.PRIMARY:
             await self._validate_primary_unique(payload.vehicle_id)

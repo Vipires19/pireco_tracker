@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from app.config import get_settings
 from app.core.database import Base
 from app.models import Company, DeviceEvent, Fleet, Position, ProcessedEvent  # noqa: F401
-from app.domains.crm.models import Customer, CustomerAuditLog  # noqa: F401
+from app.domains.crm.models import Customer, CustomerAuditLog, CustomerUser  # noqa: F401
 from app.domains.devices.models import Tracker, TrackerAssignment, TrackerAuditLog  # noqa: F401
 from app.domains.fleet.models import Vehicle, VehicleAuditLog  # noqa: F401
 from app.domains.identity.models import LoginAuditLog, RefreshToken, Role, User, UserRole  # noqa: F401

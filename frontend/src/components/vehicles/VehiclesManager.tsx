@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Search,
   Trash2,
+  Unplug,
 } from "lucide-react";
 
 import {
@@ -33,6 +34,7 @@ import {
   INSTALLATION_TYPE_LABELS,
   installationTypeBadgeClass,
   mapInstallationError,
+  updateInstallation,
   type Installation,
 } from "@/lib/installations";
 import { formatPlate } from "@/lib/masks";
@@ -190,12 +192,36 @@ export function VehiclesManager() {
     if (!accessToken) return;
     try {
       await createInstallation(accessToken, values);
-      showToast("Rastreador vinculado com sucesso");
+      showToast("Instalação registrada com sucesso");
       await Promise.all([loadInstallations(), loadTrackers(), loadVehicles()]);
     } catch (err) {
       const message =
-        err instanceof ApiError ? mapInstallationError(err.message) : "Falha ao vincular rastreador";
+        err instanceof ApiError ? mapInstallationError(err.message) : "Falha ao instalar rastreador";
       throw new Error(message);
+    }
+  }
+
+  async function handleUninstallTracker(installation: Installation) {
+    if (!accessToken) return;
+    if (
+      !window.confirm(
+        `Desinstalar o rastreador IMEI ${installation.tracker.imei}? O equipamento voltará para estoque.`,
+      )
+    ) {
+      return;
+    }
+    try {
+      await updateInstallation(accessToken, installation.id, {
+        status: "REMOVED",
+        removal_reason: "Desinstalação via tela de veículos",
+      });
+      showToast("Rastreador desinstalado com sucesso");
+      await Promise.all([loadInstallations(), loadTrackers(), loadVehicles()]);
+    } catch (err) {
+      showToast(
+        err instanceof ApiError ? mapInstallationError(err.message) : "Erro ao desinstalar",
+        "error",
+      );
     }
   }
 
@@ -427,6 +453,7 @@ export function VehiclesManager() {
                 setMenuOpenId(null);
               }}
               onLinkTracker={() => openInstallDrawer(vehicle)}
+              onUninstallTracker={(installation) => void handleUninstallTracker(installation)}
             />
           ))
         )}
@@ -448,6 +475,7 @@ export function VehiclesManager() {
               onStatus={() => openStatusDialog(vehicle)}
               onDelete={() => setDeleteTarget(vehicle)}
               onLinkTracker={() => openInstallDrawer(vehicle)}
+              onUninstallTracker={(installation) => void handleUninstallTracker(installation)}
             />
           ))
         )}
@@ -574,6 +602,7 @@ function VehicleRow({
   onStatus,
   onDelete,
   onLinkTracker,
+  onUninstallTracker,
 }: {
   vehicle: Vehicle;
   customerName: string;
@@ -584,6 +613,7 @@ function VehicleRow({
   onStatus: () => void;
   onDelete: () => void;
   onLinkTracker: () => void;
+  onUninstallTracker: (installation: Installation) => void;
 }) {
   return (
     <article className="relative flex items-start gap-4 rounded-xl border border-surface-border bg-surface-card p-4 transition hover:border-brand/30 hover:bg-slate-800/20">
@@ -598,7 +628,11 @@ function VehicleRow({
           <span>{formatPlate(vehicle.plate)}</span>
           <span>{customerName}</span>
         </div>
-        <TrackerSection installations={installations} onLinkTracker={onLinkTracker} />
+        <TrackerSection
+          installations={installations}
+          onLinkTracker={onLinkTracker}
+          onUninstallTracker={onUninstallTracker}
+        />
       </div>
       <div className="flex items-center gap-2 self-start">
         <button
@@ -646,6 +680,7 @@ function VehicleMobileCard({
   onStatus,
   onDelete,
   onLinkTracker,
+  onUninstallTracker,
 }: {
   vehicle: Vehicle;
   customerName: string;
@@ -654,6 +689,7 @@ function VehicleMobileCard({
   onStatus: () => void;
   onDelete: () => void;
   onLinkTracker: () => void;
+  onUninstallTracker: (installation: Installation) => void;
 }) {
   return (
     <article className="overflow-hidden rounded-xl border border-surface-border bg-surface-card">
@@ -668,7 +704,11 @@ function VehicleMobileCard({
         </div>
         <p className="text-sm text-surface-muted">{vehicleSubtitle(vehicle)}</p>
         <p className="text-sm font-medium">{formatPlate(vehicle.plate)}</p>
-        <TrackerSection installations={installations} onLinkTracker={onLinkTracker} />
+        <TrackerSection
+          installations={installations}
+          onLinkTracker={onLinkTracker}
+          onUninstallTracker={onUninstallTracker}
+        />
         <div className="flex flex-wrap gap-2">
           <button
             type="button"
@@ -700,10 +740,13 @@ function VehicleMobileCard({
 function TrackerSection({
   installations,
   onLinkTracker,
+  onUninstallTracker,
 }: {
   installations: Installation[];
   onLinkTracker: () => void;
+  onUninstallTracker: (installation: Installation) => void;
 }) {
+  const hasPrimary = installations.some((item) => item.installation_type === "PRIMARY");
   return (
     <div className="mt-3 rounded-lg border border-dashed border-surface-border bg-slate-900/30 p-3">
       <div className="flex items-center gap-2 text-sm font-medium">
@@ -735,18 +778,28 @@ function TrackerSection({
               <p className="mt-1 text-xs text-surface-muted">
                 {formatLastSeen(installation.tracker.last_seen_at)}
               </p>
+              <button
+                type="button"
+                onClick={() => onUninstallTracker(installation)}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-lg border border-orange-500/30 px-2.5 py-1 text-xs text-orange-300 hover:bg-orange-500/10"
+              >
+                <Unplug className="h-3.5 w-3.5" />
+                Desinstalar Rastreador
+              </button>
             </div>
           ))}
         </div>
       )}
-      <button
-        type="button"
-        onClick={onLinkTracker}
-        className="mt-2 inline-flex items-center gap-2 rounded-lg border border-surface-border px-3 py-1.5 text-xs hover:bg-slate-700/30"
-      >
-        <RadioTower className="h-3.5 w-3.5" />
-        Vincular Rastreador
-      </button>
+      {!hasPrimary && (
+        <button
+          type="button"
+          onClick={onLinkTracker}
+          className="mt-2 inline-flex items-center gap-2 rounded-lg border border-surface-border px-3 py-1.5 text-xs hover:bg-slate-700/30"
+        >
+          <RadioTower className="h-3.5 w-3.5" />
+          Instalar Rastreador
+        </button>
+      )}
     </div>
   );
 }

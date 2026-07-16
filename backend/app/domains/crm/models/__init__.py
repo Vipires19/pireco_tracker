@@ -3,6 +3,9 @@ from app.domains.crm.models.entities import (
     CustomerAuditAction,
     CustomerAuditLog,
     CustomerStatus,
+    CustomerUser,
+    CustomerUserRole,
+    CustomerUserStatus,
     DocumentType,
 )
 
@@ -11,5 +14,8 @@ __all__ = [
     "CustomerAuditAction",
     "CustomerAuditLog",
     "CustomerStatus",
+    "CustomerUser",
+    "CustomerUserRole",
+    "CustomerUserStatus",
     "DocumentType",
 ]

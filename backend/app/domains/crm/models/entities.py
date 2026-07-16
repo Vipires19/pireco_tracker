@@ -8,9 +8,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.database import Base
 
 if TYPE_CHECKING:
-    from app.domains.fleet.models import Vehicle
-
-from app.core.database import Base
 
 
 class CustomerStatus(StrEnum):
@@ -28,6 +25,17 @@ class CustomerAuditAction(StrEnum):
     UPDATED = "updated"
     STATUS_CHANGED = "status_changed"
     DELETED = "deleted"
+
+
+class CustomerUserStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    INACTIVE = "INACTIVE"
+
+
+class CustomerUserRole(StrEnum):
+    CLIENT_ADMIN = "CLIENT_ADMIN"
+    OPERATOR = "OPERATOR"
+    VIEWER = "VIEWER"
 
 
 class Customer(Base):
@@ -63,6 +71,37 @@ class Customer(Base):
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     vehicles: Mapped[list["Vehicle"]] = relationship(back_populates="customer")
+    users: Mapped[list["CustomerUser"]] = relationship(
+        back_populates="customer", cascade="all, delete-orphan"
+    )
+
+
+class CustomerUser(Base):
+    """Usuário pertencente a um Cliente — futuro Portal do Cliente."""
+
+    __tablename__ = "customer_users"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    customer_id: Mapped[int] = mapped_column(
+        ForeignKey("customers.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
+    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(10), nullable=False, default=CustomerUserStatus.ACTIVE, index=True
+    )
+    role: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=CustomerUserRole.VIEWER
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
+    )
+
+    customer: Mapped["Customer"] = relationship(back_populates="users")
 
 
 class CustomerAuditLog(Base):

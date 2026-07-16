@@ -177,6 +177,23 @@ class TrackerService:
         logger.info("Tracker updated id=%s by user_id=%s", updated.id, user.id)
         return updated
 
+    async def _release_active_assignments(
+        self,
+        tracker: Tracker,
+        *,
+        user: User,
+        reason: str,
+    ) -> None:
+        """Encerra qualquer instalação ativa e libera o vínculo com o veículo."""
+        active = await self._assignments.get_active_by_tracker(tracker.id)
+        while active is not None:
+            active.status = InstallationStatus.REMOVED.value
+            active.removed_at = datetime.now(UTC)
+            active.removed_by = user.id
+            active.removal_reason = reason
+            await self._assignments.update(active)
+            active = await self._assignments.get_active_by_tracker(tracker.id)
+
     async def update_status(
         self,
         tracker_id: int,
@@ -188,6 +205,21 @@ class TrackerService:
     ) -> Tracker:
         tracker = await self.get_tracker(tracker_id)
         previous = tracker.status
+
+        # Consistência de domínio: "Instalado" é derivado de uma instalação,
+        # não pode ser definido manualmente.
+        if payload.status == TrackerStatus.INSTALLED:
+            raise ValueError("tracker_status_install_forbidden")
+
+        # Regra operacional: ao voltar para "Em estoque" o equipamento é
+        # liberado — remove instalação ativa e vínculo com o veículo.
+        if payload.status == TrackerStatus.IN_STOCK:
+            await self._release_active_assignments(
+                tracker,
+                user=user,
+                reason=f"Rastreador movido para estoque por {user.email}",
+            )
+
         tracker.status = payload.status.value
         updated = await self._trackers.update(tracker)
         await self._audit.create(

@@ -269,7 +269,9 @@ export function TrackerFormDrawer({
                     onChange={(e) => updateField("status", e.target.value as TrackerStatus)}
                     className={inputClass}
                   >
-                    {Object.entries(TRACKER_STATUS_LABELS).map(([value, label]) => (
+                    {Object.entries(TRACKER_STATUS_LABELS)
+                      .filter(([value]) => value !== "INSTALLED")
+                      .map(([value, label]) => (
                       <option key={value} value={value}>
                         {label}
                       </option>

@@ -57,6 +57,7 @@ class SessionManager:
         return session
 
     async def bind_imei(self, connection_id: str, imei: str) -> None:
+        stale_writer = None
         async with self._lock:
             session = self._sessions.get(connection_id)
             if session is None:
@@ -70,11 +71,21 @@ class SessionManager:
                     previous,
                     connection_id,
                 )
+                stale = self._sessions.get(previous)
+                if stale is not None:
+                    stale_writer = stale.writer
 
             session.imei = imei
             session.touch()
             self._imei_index[imei] = connection_id
         logger.info("IMEI bound id=%s imei=%s", connection_id, imei)
+
+        # Fecha a conexão anterior para evitar sessões duplicadas no mesmo IMEI.
+        if stale_writer is not None:
+            try:
+                stale_writer.close()
+            except Exception:
+                logger.exception("Failed closing stale session for imei=%s", imei)
 
     async def get_by_connection(self, connection_id: str) -> DeviceSession | None:
         return self._sessions.get(connection_id)

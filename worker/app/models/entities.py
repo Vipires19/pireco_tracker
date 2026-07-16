@@ -64,6 +64,8 @@ class Tracker(Base):
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True, nullable=False)
     imei: Mapped[str] = mapped_column(String(20), index=True, nullable=False)
     model: Mapped[str | None] = mapped_column(String(100))
+    manufacturer: Mapped[str | None] = mapped_column(String(100))
+    firmware: Mapped[str | None] = mapped_column(String(100))
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
     health_status: Mapped[str] = mapped_column(String(20), default="UNKNOWN", nullable=False)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

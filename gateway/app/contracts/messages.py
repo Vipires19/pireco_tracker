@@ -102,6 +102,9 @@ class DeviceEvent(BaseContract):
 @dataclass(frozen=True)
 class DeviceConnection(BaseContract):
     action: str = ""
+    manufacturer: str | None = None
+    model: str | None = None
+    firmware: str | None = None
 
     @property
     def message_type(self) -> MessageType:
@@ -202,7 +205,13 @@ def parse_stream_fields(fields: dict[str, str]) -> DomainMessage | None:
             metadata=metadata,
         )
     if message_type == MessageType.CONNECTION:
-        return DeviceConnection(**common, action=fields.get("action", "unknown"))
+        return DeviceConnection(
+            **common,
+            action=fields.get("action", "unknown"),
+            manufacturer=fields.get("manufacturer") or None,
+            model=fields.get("model") or None,
+            firmware=fields.get("firmware") or None,
+        )
     return None
 
 

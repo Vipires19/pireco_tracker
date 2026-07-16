@@ -25,6 +25,21 @@ logger = get_logger(__name__)
 HEALTH_ONLINE = "ONLINE"
 
 
+def _normalize_ip(remote_ip: str | None) -> str | None:
+    """Persiste apenas o host (sem porta efêmera do peer TCP)."""
+    if not remote_ip:
+        return None
+    value = remote_ip.strip()
+    if not value or value == "unknown":
+        return None
+    if value.startswith("[") and "]" in value:
+        return value[1 : value.index("]")]
+    if value.count(":") == 1:
+        host, _, _port = value.partition(":")
+        return host or value
+    return value
+
+
 class PersistenceService:
     def __init__(self, redis_client: redis.Redis) -> None:
         self._redis = redis_client
@@ -110,12 +125,21 @@ class PersistenceService:
         tracker.health_status = HEALTH_ONLINE
         tracker.updated_at = datetime.now(UTC)
 
-        if message.remote_ip:
-            tracker.last_ip = message.remote_ip
-            tracker.last_remote_ip = message.remote_ip
+        ip = _normalize_ip(message.remote_ip)
+        if ip:
+            tracker.last_ip = ip
+            tracker.last_remote_ip = ip
 
         if message.source_protocol and message.source_protocol != "unknown":
-            tracker.protocol = message.source_protocol
+            tracker.protocol = message.source_protocol.strip().lower()
+
+        if isinstance(message, DeviceConnection) and message.action == "login":
+            if message.manufacturer:
+                tracker.manufacturer = message.manufacturer
+            if message.model:
+                tracker.model = message.model
+            if message.firmware:
+                tracker.firmware = message.firmware
 
         if isinstance(message, DevicePosition):
             if message.latitude is not None and message.longitude is not None:
@@ -132,7 +156,7 @@ class PersistenceService:
             "tracker_imei": message.tracker_imei,
             "trace_id": message.trace_id,
             "connection_id": message.connection_id,
-            "remote_ip": message.remote_ip,
+            "remote_ip": _normalize_ip(message.remote_ip) or message.remote_ip,
             "last_seen_at": message.received_at.isoformat(),
             "message_type": message.message_type.value,
             "protocol": message.source_protocol,
@@ -153,7 +177,7 @@ class PersistenceService:
             gps_time=message.gps_time,
             received_at=message.received_at,
             connection_id=message.connection_id,
-            remote_ip=message.remote_ip,
+            remote_ip=_normalize_ip(message.remote_ip) or message.remote_ip,
         )
         session.add(position)
 
@@ -173,7 +197,7 @@ class PersistenceService:
                 event_metadata=message.metadata or None,
                 received_at=message.received_at,
                 connection_id=message.connection_id,
-                remote_ip=message.remote_ip,
+                remote_ip=_normalize_ip(message.remote_ip) or message.remote_ip,
             )
         )
 

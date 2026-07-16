@@ -129,7 +129,7 @@ class GatewayTcpServer:
                 reader,
                 writer,
                 connection_id=connection_id,
-                remote_ip=peer_str,
+                remote_ip=remote_host,
                 lifecycle=lifecycle,
                 initial_buffer=initial_buffer,
                 remote_port=remote_port,
@@ -148,7 +148,7 @@ class GatewayTcpServer:
                     action="disconnect",
                     received_at=removed.last_activity,
                     connection_id=connection_id,
-                    remote_ip=peer_str,
+                    remote_ip=remote_host,
                 )
                 try:
                     await event_publisher.publish(disconnect)

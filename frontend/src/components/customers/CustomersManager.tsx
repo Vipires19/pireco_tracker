@@ -4,17 +4,19 @@ import { useCallback, useEffect, useState } from "react";
 import {
   Eye,
   Filter,
-  MoreHorizontal,
   Pencil,
   Plus,
   Search,
   Trash2,
   UserCheck,
+  UserCog,
   UserMinus,
   Users,
 } from "lucide-react";
 
 import { CustomerFormDrawer } from "@/components/customers/CustomerFormDrawer";
+import { CustomerUsersDrawer } from "@/components/customers/CustomerUsersDrawer";
+import { ActionMenu } from "@/components/ui/ActionMenu";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/contexts/ToastContext";
 import { ApiError } from "@/lib/api";
@@ -48,8 +50,8 @@ export function CustomersManager() {
   const [drawerMode, setDrawerMode] = useState<"create" | "edit">("create");
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
-  const [menuOpenId, setMenuOpenId] = useState<number | null>(null);
   const [viewCustomer, setViewCustomer] = useState<Customer | null>(null);
+  const [usersCustomer, setUsersCustomer] = useState<Customer | null>(null);
 
   const loadCustomers = useCallback(async () => {
     if (!accessToken) return;
@@ -85,7 +87,6 @@ export function CustomersManager() {
     setDrawerMode("edit");
     setSelectedCustomer(customer);
     setDrawerOpen(true);
-    setMenuOpenId(null);
   }
 
   async function handleSave(payload: CustomerPayload) {
@@ -126,7 +127,6 @@ export function CustomersManager() {
       showToast(
         nextStatus === "ACTIVE" ? "Cliente ativado com sucesso" : "Cliente inativado com sucesso",
       );
-      setMenuOpenId(null);
       await loadCustomers();
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : "Erro ao alterar status", "error");
@@ -139,7 +139,6 @@ export function CustomersManager() {
     try {
       await deleteCustomer(accessToken, customer.id);
       showToast("Cliente excluído com sucesso");
-      setMenuOpenId(null);
       await loadCustomers();
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : "Erro ao excluir cliente", "error");
@@ -260,28 +259,28 @@ export function CustomersManager() {
                   <td className="px-4 py-3">
                     <StatusBadge status={customer.status} />
                   </td>
-                  <td className="relative px-4 py-3 text-right">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setMenuOpenId((current) => (current === customer.id ? null : customer.id))
-                      }
-                      className="rounded-lg p-2 hover:bg-slate-700/40"
-                    >
-                      <MoreHorizontal className="h-4 w-4" />
-                    </button>
-                    {menuOpenId === customer.id && (
+                  <td className="px-4 py-3 text-right">
+                    <div className="inline-flex justify-end">
                       <ActionMenu
-                        customer={customer}
-                        onView={() => {
-                          setViewCustomer(customer);
-                          setMenuOpenId(null);
-                        }}
-                        onEdit={() => openEdit(customer)}
-                        onToggleStatus={() => void handleToggleStatus(customer)}
-                        onDelete={() => void handleDelete(customer)}
+                        ariaLabel={`Ações de ${customer.full_name}`}
+                        items={[
+                          { label: "Visualizar", icon: Eye, onClick: () => setViewCustomer(customer) },
+                          { label: "Editar", icon: Pencil, onClick: () => openEdit(customer) },
+                          { label: "Usuários", icon: UserCog, onClick: () => setUsersCustomer(customer) },
+                          {
+                            label: customer.status === "ACTIVE" ? "Inativar" : "Ativar",
+                            icon: customer.status === "ACTIVE" ? UserMinus : UserCheck,
+                            onClick: () => void handleToggleStatus(customer),
+                          },
+                          {
+                            label: "Excluir",
+                            icon: Trash2,
+                            danger: true,
+                            onClick: () => void handleDelete(customer),
+                          },
+                        ]}
                       />
-                    )}
+                    </div>
                   </td>
                 </tr>
               ))
@@ -333,6 +332,13 @@ export function CustomersManager() {
                   className="rounded-lg border border-surface-border px-3 py-1.5 text-xs"
                 >
                   Editar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUsersCustomer(customer)}
+                  className="rounded-lg border border-surface-border px-3 py-1.5 text-xs"
+                >
+                  Usuários
                 </button>
                 <button
                   type="button"
@@ -392,6 +398,13 @@ export function CustomersManager() {
 
       {viewCustomer && (
         <ViewDrawer customer={viewCustomer} onClose={() => setViewCustomer(null)} />
+      )}
+
+      {usersCustomer && (
+        <CustomerUsersDrawer
+          customer={usersCustomer}
+          onClose={() => setUsersCustomer(null)}
+        />
       )}
 
       {filterDrawerOpen && (
@@ -471,58 +484,6 @@ function StatusBadge({ status }: { status: CustomerStatus }) {
     >
       {status === "ACTIVE" ? "Ativo" : "Inativo"}
     </span>
-  );
-}
-
-function ActionMenu({
-  customer,
-  onView,
-  onEdit,
-  onToggleStatus,
-  onDelete,
-}: {
-  customer: Customer;
-  onView: () => void;
-  onEdit: () => void;
-  onToggleStatus: () => void;
-  onDelete: () => void;
-}) {
-  return (
-    <div className="absolute right-4 top-12 z-10 w-44 rounded-xl border border-surface-border bg-surface-card p-1 shadow-2xl">
-      <MenuButton icon={Eye} label="Visualizar" onClick={onView} />
-      <MenuButton icon={Pencil} label="Editar" onClick={onEdit} />
-      <MenuButton
-        icon={customer.status === "ACTIVE" ? UserMinus : UserCheck}
-        label={customer.status === "ACTIVE" ? "Inativar" : "Ativar"}
-        onClick={onToggleStatus}
-      />
-      <MenuButton icon={Trash2} label="Excluir" onClick={onDelete} danger />
-    </div>
-  );
-}
-
-function MenuButton({
-  icon: Icon,
-  label,
-  onClick,
-  danger,
-}: {
-  icon: React.ElementType;
-  label: string;
-  onClick: () => void;
-  danger?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm hover:bg-slate-700/40 ${
-        danger ? "text-red-400" : ""
-      }`}
-    >
-      <Icon className="h-4 w-4" />
-      {label}
-    </button>
   );
 }
 

@@ -34,6 +34,7 @@ def _handle_service_error(exc: ValueError) -> HTTPException:
         "tracker_not_found": status.HTTP_404_NOT_FOUND,
         "imei_already_exists": status.HTTP_409_CONFLICT,
         "tracker_has_active_assignment": status.HTTP_409_CONFLICT,
+        "tracker_status_install_forbidden": status.HTTP_400_BAD_REQUEST,
     }
     return HTTPException(
         status_code=status_map.get(code, status.HTTP_400_BAD_REQUEST),
