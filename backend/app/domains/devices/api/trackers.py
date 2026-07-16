@@ -80,7 +80,7 @@ async def get_tracker(
         tracker = await service.get_tracker(tracker_id)
     except ValueError as exc:
         raise _handle_service_error(exc) from exc
-    return TrackerResponse.model_validate(tracker)
+    return service.serialize(tracker)
 
 
 @router.post("", response_model=TrackerResponse, status_code=status.HTTP_201_CREATED)
@@ -100,7 +100,7 @@ async def create_tracker(
         )
     except ValueError as exc:
         raise _handle_service_error(exc) from exc
-    return TrackerResponse.model_validate(tracker)
+    return service.serialize(tracker)
 
 
 @router.put("/{tracker_id}", response_model=TrackerResponse)
@@ -122,7 +122,7 @@ async def update_tracker(
         )
     except ValueError as exc:
         raise _handle_service_error(exc) from exc
-    return TrackerResponse.model_validate(tracker)
+    return service.serialize(tracker)
 
 
 @router.patch("/{tracker_id}/status", response_model=TrackerResponse)
@@ -144,7 +144,7 @@ async def update_tracker_status(
         )
     except ValueError as exc:
         raise _handle_service_error(exc) from exc
-    return TrackerResponse.model_validate(tracker)
+    return service.serialize(tracker)
 
 
 @router.delete("/{tracker_id}", status_code=status.HTTP_204_NO_CONTENT)

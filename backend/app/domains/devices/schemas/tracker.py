@@ -79,6 +79,12 @@ class TrackerResponse(BaseModel):
     origin: TrackerOrigin
     last_seen_at: datetime | None
     last_ip: str | None
+    protocol: str | None = None
+    last_latitude: float | None = None
+    last_longitude: float | None = None
+    last_speed: float | None = None
+    last_course: int | None = None
+    last_gps_time: datetime | None = None
     created_at: datetime
     updated_at: datetime
 

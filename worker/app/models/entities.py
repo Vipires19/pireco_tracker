@@ -55,15 +55,27 @@ class Vehicle(Base):
 
 
 class Tracker(Base):
+    """Cadastro ERP de rastreadores — sync de telemetria (last_seen / health / GPS)."""
+
     __tablename__ = "trackers"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    # Coluna legada multi-tenant (server_default=1); não usada pela lógica ERP.
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id"), index=True, nullable=False)
-    imei: Mapped[str] = mapped_column(String(20), unique=True, index=True, nullable=False)
+    imei: Mapped[str] = mapped_column(String(20), index=True, nullable=False)
     model: Mapped[str | None] = mapped_column(String(100))
     is_active: Mapped[bool] = mapped_column(default=True, nullable=False)
+    health_status: Mapped[str] = mapped_column(String(20), default="UNKNOWN", nullable=False)
     last_seen_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_ip: Mapped[str | None] = mapped_column(String(45))
     last_remote_ip: Mapped[str | None] = mapped_column(String(45))
+    protocol: Mapped[str | None] = mapped_column(String(50))
+    last_latitude: Mapped[float | None] = mapped_column(Float)
+    last_longitude: Mapped[float | None] = mapped_column(Float)
+    last_speed: Mapped[float | None] = mapped_column(Float)
+    last_course: Mapped[int | None] = mapped_column(Integer)
+    last_gps_time: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

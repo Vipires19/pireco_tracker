@@ -11,7 +11,14 @@ export type TrackerStatus =
   | "DAMAGED"
   | "DISPOSED";
 
-export type HealthStatus = "UNKNOWN" | "HEALTHY" | "WARNING" | "ERROR" | "CRITICAL";
+export type HealthStatus =
+  | "UNKNOWN"
+  | "ONLINE"
+  | "OFFLINE"
+  | "HEALTHY"
+  | "WARNING"
+  | "ERROR"
+  | "CRITICAL";
 
 export type TrackerOrigin = "MANUAL" | "AUTO_DISCOVERY" | "IMPORT";
 
@@ -33,6 +40,12 @@ export type Tracker = {
   origin: TrackerOrigin;
   last_seen_at: string | null;
   last_ip: string | null;
+  protocol: string | null;
+  last_latitude: number | null;
+  last_longitude: number | null;
+  last_speed: number | null;
+  last_course: number | null;
+  last_gps_time: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -160,11 +173,34 @@ export const TRACKER_STATUS_LABELS: Record<TrackerStatus, string> = {
 
 export const HEALTH_STATUS_LABELS: Record<HealthStatus, string> = {
   UNKNOWN: "Desconhecido",
+  ONLINE: "Online",
+  OFFLINE: "Offline",
   HEALTHY: "Saudável",
   WARNING: "Atenção",
   ERROR: "Erro",
   CRITICAL: "Crítico",
 };
+
+export function formatRelativeCommunication(value: string | null): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+
+  const diffMs = Date.now() - date.getTime();
+  if (diffMs < 0) return "agora";
+
+  const seconds = Math.floor(diffMs / 1000);
+  if (seconds < 60) return seconds <= 1 ? "Há 1 segundo" : `Há ${seconds} segundos`;
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return minutes === 1 ? "Há 1 minuto" : `Há ${minutes} minutos`;
+
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return hours === 1 ? "Há 1 hora" : `Há ${hours} horas`;
+
+  const days = Math.floor(hours / 24);
+  return days === 1 ? "Há 1 dia" : `Há ${days} dias`;
+}
 
 export const TRACKER_ORIGIN_LABELS: Record<TrackerOrigin, string> = {
   MANUAL: "Manual",

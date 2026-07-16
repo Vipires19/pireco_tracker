@@ -1,4 +1,4 @@
-import traceback
+import json
 from datetime import UTC, datetime
 
 import redis.asyncio as redis
@@ -12,8 +12,8 @@ from app.contracts.messages import (
     DevicePosition,
     DomainMessage,
 )
-from app.exceptions import DuplicateEventError, PersistenceError
 from app.core.observability import bind_context, get_logger, log_with_fields
+from app.exceptions import DuplicateEventError
 
 from app.config import get_settings
 from app.models.entities import DeviceEvent as DeviceEventModel
@@ -21,6 +21,8 @@ from app.models.entities import Position, ProcessedEvent, Tracker
 from app.observability.metrics import EVENTS_DUPLICATE, EVENTS_PERSISTED
 
 logger = get_logger(__name__)
+
+HEALTH_ONLINE = "ONLINE"
 
 
 class PersistenceService:
@@ -41,7 +43,26 @@ class PersistenceService:
                 details={"dedup_key": message.dedup_key()},
             )
 
-        tracker = await self._ensure_tracker(session, message)
+        tracker = await self._find_tracker(session, message.tracker_imei)
+        if tracker is None:
+            log_with_fields(
+                logger,
+                30,
+                "Device not registered",
+                imei=message.tracker_imei,
+                protocol=message.source_protocol,
+                remote_ip=message.remote_ip,
+                message_type=message.message_type.value,
+            )
+            await self._mark_processed(session, message)
+            return
+
+        should_sync = isinstance(message, (DevicePosition, DeviceHeartbeat)) or (
+            isinstance(message, DeviceConnection) and message.action == "login"
+        )
+        if should_sync:
+            await self._sync_device(tracker, message)
+
         await self._update_session_cache(message)
 
         if isinstance(message, DevicePosition):
@@ -73,25 +94,38 @@ class PersistenceService:
             )
         )
 
-    async def _ensure_tracker(self, session: AsyncSession, message: DomainMessage) -> Tracker:
+    async def _find_tracker(self, session: AsyncSession, imei: str) -> Tracker | None:
         result = await session.execute(
-            select(Tracker).where(Tracker.imei == message.tracker_imei)
+            select(Tracker).where(Tracker.imei == imei, Tracker.deleted_at.is_(None))
         )
-        tracker = result.scalar_one_or_none()
+        return result.scalar_one_or_none()
 
-        if tracker is None:
-            tracker = Tracker(company_id=1, imei=message.tracker_imei, is_active=True)
-            session.add(tracker)
-            await session.flush()
-            log_with_fields(logger, 20, "Tracker auto-provisioned", tracker_id=tracker.id)
+    async def _sync_device(self, tracker: Tracker, message: DomainMessage) -> None:
+        """Atualiza estado ERP do dispositivo a partir da telemetria (sem auto-create)."""
+        now = message.received_at
+        if now.tzinfo is None:
+            now = now.replace(tzinfo=UTC)
 
-        tracker.last_seen_at = message.received_at
-        tracker.last_remote_ip = message.remote_ip
-        return tracker
+        tracker.last_seen_at = now
+        tracker.health_status = HEALTH_ONLINE
+        tracker.updated_at = datetime.now(UTC)
+
+        if message.remote_ip:
+            tracker.last_ip = message.remote_ip
+            tracker.last_remote_ip = message.remote_ip
+
+        if message.source_protocol and message.source_protocol != "unknown":
+            tracker.protocol = message.source_protocol
+
+        if isinstance(message, DevicePosition):
+            if message.latitude is not None and message.longitude is not None:
+                tracker.last_latitude = message.latitude
+                tracker.last_longitude = message.longitude
+                tracker.last_speed = message.speed_kmh
+                tracker.last_course = message.course_degrees
+                tracker.last_gps_time = message.gps_time or now
 
     async def _update_session_cache(self, message: DomainMessage) -> None:
-        import json
-
         settings = get_settings()
         key = f"{settings.redis_session_key_prefix}{message.tracker_imei}"
         payload = {
@@ -101,6 +135,7 @@ class PersistenceService:
             "remote_ip": message.remote_ip,
             "last_seen_at": message.received_at.isoformat(),
             "message_type": message.message_type.value,
+            "protocol": message.source_protocol,
         }
         await self._redis.set(key, json.dumps(payload), ex=3600)
 

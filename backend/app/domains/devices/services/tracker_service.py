@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domains.devices.health import resolve_health_status
 from app.domains.devices.models import (
     InstallationStatus,
     InstallationType,
@@ -32,6 +33,13 @@ from app.domains.identity.models import User
 from app.kernel.logger import get_logger
 
 logger = get_logger(__name__)
+
+
+def _to_response(tracker: Tracker) -> TrackerResponse:
+    response = TrackerResponse.model_validate(tracker)
+    return response.model_copy(
+        update={"health_status": resolve_health_status(tracker.last_seen_at)}
+    )
 
 
 class TrackerService:
@@ -75,7 +83,7 @@ class TrackerService:
         )
         total_pages = max(1, math.ceil(total / page_size)) if total else 1
         return TrackerListResponse(
-            items=[TrackerResponse.model_validate(t) for t in items],
+            items=[_to_response(t) for t in items],
             total=total,
             page=page,
             page_size=page_size,
@@ -88,6 +96,9 @@ class TrackerService:
         if tracker is None:
             raise ValueError("tracker_not_found")
         return tracker
+
+    def serialize(self, tracker: Tracker) -> TrackerResponse:
+        return _to_response(tracker)
 
     async def _ensure_unique_imei(self, imei: str, *, exclude_id: int | None = None) -> None:
         existing = await self._trackers.get_by_imei(imei, exclude_id=exclude_id)

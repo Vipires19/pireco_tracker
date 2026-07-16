@@ -37,6 +37,7 @@ import {
   createTracker,
   deleteTracker,
   fetchTrackers,
+  formatRelativeCommunication,
   HEALTH_STATUS_LABELS,
   mapTrackerError,
   TRACKER_ORIGIN_LABELS,
@@ -604,8 +605,27 @@ function TrackerCard({
         <Detail label="Firmware" value={tracker.firmware} />
         <Detail label="Operadora" value={tracker.carrier} />
         <Detail label="Número do chip" value={tracker.tracker_phone_number} />
-        <Detail label="Última comunicação" value={formatDateTime(tracker.last_seen_at)} />
+        <Detail
+          label="Última comunicação"
+          value={formatRelativeCommunication(tracker.last_seen_at)}
+        />
+        <Detail label="Protocolo" value={tracker.protocol} />
+        <Detail label="Último IP" value={tracker.last_ip} />
         <Detail label="ICCID" value={tracker.sim_iccid} />
+        {tracker.last_latitude != null && tracker.last_longitude != null && (
+          <>
+            <Detail
+              label="Última posição"
+              value={`${tracker.last_latitude.toFixed(6)}, ${tracker.last_longitude.toFixed(6)}`}
+            />
+            <Detail
+              label="Velocidade"
+              value={
+                tracker.last_speed != null ? `${tracker.last_speed.toFixed(1)} km/h` : null
+              }
+            />
+          </>
+        )}
       </dl>
 
       <div className="mt-4 flex flex-wrap gap-2 border-t border-surface-border pt-3">
@@ -697,14 +717,18 @@ function StatusBadge({ status }: { status: TrackerStatus }) {
 function HealthBadge({ health }: { health: HealthStatus }) {
   const styles: Record<HealthStatus, string> = {
     UNKNOWN: "bg-slate-500/20 text-slate-300",
+    ONLINE: "bg-emerald-500/15 text-emerald-300",
+    OFFLINE: "bg-red-500/15 text-red-300",
     HEALTHY: "bg-emerald-500/15 text-emerald-300",
     WARNING: "bg-amber-500/15 text-amber-300",
     ERROR: "bg-orange-500/15 text-orange-300",
     CRITICAL: "bg-red-500/15 text-red-300",
   };
+  const icon =
+    health === "ONLINE" ? "🟢" : health === "OFFLINE" ? "🔴" : null;
   return (
     <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${styles[health]}`}>
-      <Activity className="h-3 w-3" />
+      {icon ? <span aria-hidden>{icon}</span> : <Activity className="h-3 w-3" />}
       {HEALTH_STATUS_LABELS[health]}
     </span>
   );
