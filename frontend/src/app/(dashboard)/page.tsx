@@ -38,7 +38,12 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!accessToken) return;
-    void fetchDashboardOverview(accessToken).then(setStats).catch(() => setStats(null));
+    const load = () => {
+      void fetchDashboardOverview(accessToken).then(setStats).catch(() => setStats(null));
+    };
+    load();
+    const timer = window.setInterval(load, 15_000);
+    return () => window.clearInterval(timer);
   }, [accessToken]);
 
   return (

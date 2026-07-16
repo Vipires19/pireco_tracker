@@ -32,6 +32,8 @@ export type DashboardOverview = {
   vehicles: number;
   online: number;
   offline: number;
+  unstable?: number;
+  unknown?: number;
 };
 
 const ACCESS_TOKEN_KEY = "vt_access_token";

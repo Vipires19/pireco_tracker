@@ -11,7 +11,9 @@ from app.domains.crm.schemas.customer import (
 from app.domains.crm.schemas.customer_user import (
     CustomerUserCreate,
     CustomerUserListResponse,
+    CustomerUserResetPassword,
     CustomerUserResponse,
+    CustomerUserStatusUpdate,
     CustomerUserUpdate,
 )
 
@@ -26,6 +28,8 @@ __all__ = [
     "SortOrder",
     "CustomerUserCreate",
     "CustomerUserUpdate",
+    "CustomerUserStatusUpdate",
+    "CustomerUserResetPassword",
     "CustomerUserResponse",
     "CustomerUserListResponse",
 ]

@@ -14,6 +14,7 @@ export type TrackerStatus =
 export type HealthStatus =
   | "UNKNOWN"
   | "ONLINE"
+  | "UNSTABLE"
   | "OFFLINE"
   | "HEALTHY"
   | "WARNING"
@@ -174,6 +175,7 @@ export const TRACKER_STATUS_LABELS: Record<TrackerStatus, string> = {
 export const HEALTH_STATUS_LABELS: Record<HealthStatus, string> = {
   UNKNOWN: "Desconhecido",
   ONLINE: "Online",
+  UNSTABLE: "Instável",
   OFFLINE: "Offline",
   HEALTHY: "Saudável",
   WARNING: "Atenção",

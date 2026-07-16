@@ -27,7 +27,9 @@ class TrackerStatus(StrEnum):
 class HealthStatus(StrEnum):
     UNKNOWN = "UNKNOWN"
     ONLINE = "ONLINE"
+    UNSTABLE = "UNSTABLE"
     OFFLINE = "OFFLINE"
+    # Legados — não usados pelo HealthService (mantidos por compatibilidade de schema).
     HEALTHY = "HEALTHY"
     WARNING = "WARNING"
     ERROR = "ERROR"

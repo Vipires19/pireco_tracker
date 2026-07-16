@@ -797,6 +797,7 @@ function HealthBadge({ health }: { health: HealthStatus }) {
   const styles: Record<HealthStatus, string> = {
     UNKNOWN: "bg-slate-500/20 text-slate-300",
     ONLINE: "bg-emerald-500/15 text-emerald-300",
+    UNSTABLE: "bg-amber-500/15 text-amber-300",
     OFFLINE: "bg-red-500/15 text-red-300",
     HEALTHY: "bg-emerald-500/15 text-emerald-300",
     WARNING: "bg-amber-500/15 text-amber-300",
@@ -804,7 +805,13 @@ function HealthBadge({ health }: { health: HealthStatus }) {
     CRITICAL: "bg-red-500/15 text-red-300",
   };
   const icon =
-    health === "ONLINE" ? "🟢" : health === "OFFLINE" ? "🔴" : null;
+    health === "ONLINE"
+      ? "🟢"
+      : health === "UNSTABLE"
+        ? "🟡"
+        : health === "OFFLINE"
+          ? "🔴"
+          : null;
   return (
     <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${styles[health]}`}>
       {icon ? <span aria-hidden>{icon}</span> : <Activity className="h-3 w-3" />}

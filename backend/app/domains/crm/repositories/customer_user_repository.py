@@ -21,12 +21,15 @@ class CustomerUserRepository:
         result = await self._session.execute(query)
         return result.scalar_one_or_none()
 
-    async def list_by_customer(self, customer_id: int) -> tuple[list[CustomerUser], int]:
-        query = (
-            select(CustomerUser)
-            .where(CustomerUser.customer_id == customer_id)
-            .order_by(CustomerUser.full_name.asc())
-        )
+    async def list_users(
+        self,
+        *,
+        customer_id: int | None = None,
+    ) -> tuple[list[CustomerUser], int]:
+        query = select(CustomerUser)
+        if customer_id is not None:
+            query = query.where(CustomerUser.customer_id == customer_id)
+        query = query.order_by(CustomerUser.full_name.asc())
         total = int(
             (
                 await self._session.execute(
@@ -36,6 +39,9 @@ class CustomerUserRepository:
         )
         result = await self._session.execute(query)
         return list(result.scalars().all()), total
+
+    async def list_by_customer(self, customer_id: int) -> tuple[list[CustomerUser], int]:
+        return await self.list_users(customer_id=customer_id)
 
     async def create(self, user: CustomerUser) -> CustomerUser:
         self._session.add(user)

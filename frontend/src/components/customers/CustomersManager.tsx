@@ -266,7 +266,7 @@ export function CustomersManager() {
                         items={[
                           { label: "Visualizar", icon: Eye, onClick: () => setViewCustomer(customer) },
                           { label: "Editar", icon: Pencil, onClick: () => openEdit(customer) },
-                          { label: "Usuários", icon: UserCog, onClick: () => setUsersCustomer(customer) },
+                          { label: "Portal do Cliente", icon: UserCog, onClick: () => setUsersCustomer(customer) },
                           {
                             label: customer.status === "ACTIVE" ? "Inativar" : "Ativar",
                             icon: customer.status === "ACTIVE" ? UserMinus : UserCheck,
@@ -338,7 +338,7 @@ export function CustomersManager() {
                   onClick={() => setUsersCustomer(customer)}
                   className="rounded-lg border border-surface-border px-3 py-1.5 text-xs"
                 >
-                  Usuários
+                  Portal
                 </button>
                 <button
                   type="button"

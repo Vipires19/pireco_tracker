@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.domains.devices.health import online_since
+from app.domains.devices.health import COMPUTED_HEALTH_STATUSES, health_conditions
 from app.domains.devices.models import (
     HealthStatus,
     InstallationStatus,
@@ -93,18 +93,12 @@ class TrackerRepository:
             query = query.where(Tracker.origin == origin)
 
         if health is not None:
-            if health == HealthStatus.ONLINE.value:
-                query = query.where(
-                    Tracker.last_seen_at.is_not(None),
-                    Tracker.last_seen_at >= online_since(),
-                )
-            elif health == HealthStatus.OFFLINE.value:
-                query = query.where(
-                    Tracker.last_seen_at.is_not(None),
-                    Tracker.last_seen_at < online_since(),
-                )
-            elif health == HealthStatus.UNKNOWN.value:
-                query = query.where(Tracker.last_seen_at.is_(None))
+            try:
+                status_value = HealthStatus(health)
+            except ValueError:
+                status_value = None
+            if status_value in COMPUTED_HEALTH_STATUSES:
+                query = query.where(*health_conditions(status_value))
             else:
                 query = query.where(Tracker.health_status == health)
 
