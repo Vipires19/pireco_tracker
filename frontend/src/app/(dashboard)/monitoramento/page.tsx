@@ -1,5 +1,5 @@
-import { PlaceholderPage } from "@/components/ui/PlaceholderPage";
+import { MonitoringCenter } from "@/components/monitoring/MonitoringCenter";
 
 export default function MonitoramentoPage() {
-  return <PlaceholderPage title="Monitoramento" />;
+  return <MonitoringCenter />;
 }
