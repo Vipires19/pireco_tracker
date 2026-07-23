@@ -9,7 +9,7 @@ import { MONITORING_POLL_INTERVAL_MS } from "@/lib/monitoring";
 const fetchMonitoringVehicles = vi.fn();
 
 vi.mock("@/contexts/AuthContext", () => ({
-  useAuth: () => ({ token: "test-token" }),
+  useAuth: () => ({ accessToken: "test-token" }),
 }));
 
 vi.mock("@/lib/monitoring", async () => {

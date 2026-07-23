@@ -5,20 +5,19 @@ import { Search } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import { FleetMap, MapProvider } from "@/components/map";
-import { useAuth } from "@/contexts/AuthContext";
 import { toMapMarkers, useMonitoringVehicles } from "@/hooks/useMonitoringVehicles";
 import {
   HEALTH_BADGE_STYLES,
   HEALTH_STATUS_LABELS,
   healthStatusIcon,
 } from "@/lib/health";
+import { ApiError } from "@/lib/api";
 import { filterMonitoringVehicles } from "@/lib/monitoring";
 import { formatRelativeCommunication } from "@/lib/trackers";
 
 const mapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 
 export function MonitoringCenter() {
-  const { token } = useAuth();
   const { data: vehicles = [], isLoading, isError, error, dataUpdatedAt } = useMonitoringVehicles();
   const [search, setSearch] = useState("");
   const [selectedVehicleId, setSelectedVehicleId] = useState<number | null>(null);
@@ -30,7 +29,10 @@ export function MonitoringCenter() {
 
   const mapMarkers = useMemo(() => toMapMarkers(filteredVehicles), [filteredVehicles]);
 
-  if (!token) return null;
+  const errorMessage =
+    error instanceof ApiError || error instanceof Error
+      ? error.message
+      : "Erro ao carregar veículos";
 
   return (
     <div className="space-y-4">
@@ -79,7 +81,7 @@ export function MonitoringCenter() {
 
             {isError && (
               <div className="p-4 text-sm text-red-300">
-                Falha ao carregar veículos: {(error as Error).message}
+                Falha ao carregar veículos: {errorMessage}
               </div>
             )}
 

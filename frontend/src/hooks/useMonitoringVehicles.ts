@@ -12,34 +12,44 @@ import {
 export const monitoringVehiclesQueryKey = ["monitoring", "vehicles"] as const;
 
 export function useMonitoringVehicles() {
-  const { token } = useAuth();
+  const { accessToken } = useAuth();
 
   return useQuery({
     queryKey: monitoringVehiclesQueryKey,
-    queryFn: () => fetchMonitoringVehicles(token!),
-    enabled: Boolean(token),
+    queryFn: () => {
+      if (!accessToken) {
+        throw new Error("Sessão não autenticada");
+      }
+      return fetchMonitoringVehicles(accessToken);
+    },
+    enabled: Boolean(accessToken),
     refetchInterval: MONITORING_POLL_INTERVAL_MS,
     refetchIntervalInBackground: true,
   });
 }
 
 export function toMapMarkers(vehicles: MonitoringVehicle[]) {
-  return vehicles
-    .filter(
-      (vehicle) =>
-        vehicle.latitude != null &&
-        vehicle.longitude != null &&
-        Number.isFinite(vehicle.latitude) &&
-        Number.isFinite(vehicle.longitude),
-    )
-    .map((vehicle) => ({
-      id: vehicle.vehicle_id,
-      position: { lat: vehicle.latitude!, lng: vehicle.longitude! },
-      plate: vehicle.plate,
-      customerName: vehicle.customer_name,
-      imei: vehicle.tracker_imei,
-      speed: vehicle.speed,
-      lastSeenAt: vehicle.last_seen_at,
-      health: vehicle.health,
-    }));
+  return vehicles.flatMap((vehicle) => {
+    if (
+      vehicle.latitude == null ||
+      vehicle.longitude == null ||
+      !Number.isFinite(vehicle.latitude) ||
+      !Number.isFinite(vehicle.longitude)
+    ) {
+      return [];
+    }
+
+    return [
+      {
+        id: vehicle.vehicle_id,
+        position: { lat: vehicle.latitude, lng: vehicle.longitude },
+        plate: vehicle.plate,
+        customerName: vehicle.customer_name,
+        imei: vehicle.tracker_imei,
+        speed: vehicle.speed,
+        lastSeenAt: vehicle.last_seen_at,
+        health: vehicle.health,
+      },
+    ];
+  });
 }
